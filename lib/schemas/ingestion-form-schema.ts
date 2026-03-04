@@ -61,3 +61,13 @@ export const pasteJsonSchema = z.object({
 });
 
 export type PasteJsonValues = z.infer<typeof pasteJsonSchema>;
+
+/**
+ * Schema for the "Paste HTML" raw input mode.
+ * Accepts raw Upwork job listing HTML to be parsed into job fields.
+ */
+export const pasteHtmlSchema = z.object({
+    rawHtml: z.string().min(1, "Paste Upwork job HTML")
+});
+
+export type PasteHtmlValues = z.infer<typeof pasteHtmlSchema>;
