@@ -19,3 +19,7 @@ coverage/
 
 # typescript
 *.tsbuildinfo
+
+.idea
+
+convex/_generated

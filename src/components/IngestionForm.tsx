@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 
 import { api } from "@/convex/_generated/api";
 import type { ExtractionResultsData } from "@/src/components/ExtractionResults";
+import { parseUpworkJobHtml } from "@/src/lib/ai/html-parser";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -18,8 +19,10 @@ import { useToast } from "@/src/hooks/use-toast";
 import { cn } from "@/src/lib/utils";
 import {
   ingestionFormSchema,
+  pasteHtmlSchema,
   pasteJsonSchema,
   type IngestionFormValues,
+  type PasteHtmlValues,
   type PasteJsonValues
 } from "@/lib/schemas/ingestion-form-schema";
 
@@ -86,7 +89,7 @@ function BooleanBadgeField({
 }
 
 export function IngestionForm({ onSuccess }: IngestionFormProps) {
-  const [mode, setMode] = useState<"form" | "json">("form");
+  const [mode, setMode] = useState<"form" | "json" | "html">("form");
   const [skillInput, setSkillInput] = useState("");
 
   const { toast } = useToast();
@@ -100,6 +103,10 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
   const jsonForm = useForm<PasteJsonValues>({
     resolver: zodResolver(pasteJsonSchema),
     defaultValues: { rawJson: "" }
+  });
+  const htmlForm = useForm<PasteHtmlValues>({
+    resolver: zodResolver(pasteHtmlSchema),
+    defaultValues: { rawHtml: "" }
   });
 
   const skills = form.watch("job.skills");
@@ -178,6 +185,53 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     }
   }
 
+  async function onHtmlSubmit(values: PasteHtmlValues) {
+    try {
+      const parsed = parseUpworkJobHtml(values.rawHtml);
+      const current = form.getValues();
+
+      form.reset({
+        ...current,
+        job: {
+          ...current.job,
+          title: parsed.title || current.job.title,
+          text: parsed.text || current.job.text,
+          skills: parsed.skills.length > 0 ? parsed.skills : current.job.skills,
+          type: parsed.type,
+          clientLocation: parsed.clientLocation || current.job.clientLocation,
+          clientReview: parsed.clientReview || current.job.clientReview,
+          clientReviewAmount: parsed.clientReviewAmount || current.job.clientReviewAmount,
+          clientTotalSpent: parsed.clientTotalSpent || current.job.clientTotalSpent
+        }
+      });
+
+      setMode("form");
+
+      const extractedFields = [
+        parsed.title && "title",
+        parsed.text && "description",
+        parsed.skills.length > 0 && `${parsed.skills.length} skills`,
+        parsed.clientLocation && "location",
+        parsed.clientTotalSpent > 0 && "total spent"
+      ].filter(Boolean);
+
+      toast({
+        title: "HTML parsed successfully",
+        description:
+          extractedFields.length > 0
+            ? `Extracted: ${extractedFields.join(", ")}. Review Job and submit.`
+            : "No fields extracted. Verify the HTML payload and try again."
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid HTML payload";
+      toast({
+        title: "HTML parse error",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  }
+
   return (
     <Card className="border-0 shadow-lg">
       <CardHeader>
@@ -194,6 +248,9 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
             </Button>
             <Button type="button" size="sm" variant={mode === "json" ? "default" : "ghost"} className="rounded-md" onClick={() => setMode("json")}>
               Paste JSON
+            </Button>
+            <Button type="button" size="sm" variant={mode === "html" ? "default" : "ghost"} className="rounded-md" onClick={() => setMode("html")}>
+              Paste HTML
             </Button>
           </div>
         </div>
@@ -222,6 +279,32 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
               />
               <Button type="submit" className="w-full">
                 Parse & Load into Form
+              </Button>
+            </form>
+          </Form>
+        ) : mode === "html" ? (
+          <Form {...htmlForm}>
+            <form onSubmit={htmlForm.handleSubmit(onHtmlSubmit)} className="space-y-4">
+              <FormField
+                control={htmlForm.control}
+                name="rawHtml"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Paste Upwork Job HTML</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        rows={16}
+                        placeholder="<html>...</html>"
+                        className="font-mono text-sm"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full">
+                Parse HTML & Load Job
               </Button>
             </form>
           </Form>
