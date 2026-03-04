@@ -11,9 +11,12 @@ import { api } from "@/convex/_generated/api";
 import {
     ingestionFormSchema,
     pasteJsonSchema,
+    pasteHtmlSchema,
     type IngestionFormValues,
-    type PasteJsonValues
+    type PasteJsonValues,
+    type PasteHtmlValues
 } from "@/lib/schemas/ingestion-form-schema";
+import { parseUpworkJobHtml } from "@/src/lib/ai/html-parser";
 import type { ExtractionResultsData } from "@/components/extraction-results";
 
 import { Button } from "@/components/ui/button";
@@ -107,7 +110,7 @@ const defaultValues: IngestionFormValues = {
 // ---------- Component ----------
 
 export function IngestionForm({ onSuccess }: IngestionFormProps) {
-    const [mode, setMode] = useState<"form" | "json">("form");
+    const [mode, setMode] = useState<"form" | "json" | "html">("form");
     const [skillInput, setSkillInput] = useState("");
 
     const ingestAction = useAction(api.jobs.ingestJobProposalPair);
@@ -120,6 +123,11 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     const jsonForm = useForm<PasteJsonValues>({
         resolver: zodResolver(pasteJsonSchema),
         defaultValues: { rawJson: "" }
+    });
+
+    const htmlForm = useForm<PasteHtmlValues>({
+        resolver: zodResolver(pasteHtmlSchema),
+        defaultValues: { rawHtml: "" }
     });
 
     const {
@@ -193,6 +201,48 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         }
     }
 
+    async function onHtmlSubmit(data: PasteHtmlValues) {
+        try {
+            const parsed = parseUpworkJobHtml(data.rawHtml);
+
+            // Merge parsed data into the current form values (only Job section)
+            const current = form.getValues();
+            form.reset({
+                ...current,
+                job: {
+                    ...current.job,
+                    title: parsed.title || current.job.title,
+                    text: parsed.text || current.job.text,
+                    skills: parsed.skills.length > 0 ? parsed.skills : current.job.skills,
+                    type: parsed.type,
+                    clientLocation: parsed.clientLocation || current.job.clientLocation,
+                    clientReview: parsed.clientReview || current.job.clientReview,
+                    clientReviewAmount: parsed.clientReviewAmount || current.job.clientReviewAmount,
+                    clientTotalSpent: parsed.clientTotalSpent || current.job.clientTotalSpent,
+                }
+            });
+
+            setMode("form");
+
+            const extractedFields = [
+                parsed.title && "title",
+                parsed.text && "description",
+                parsed.skills.length > 0 && `${parsed.skills.length} skills`,
+                parsed.clientLocation && "location",
+                parsed.clientTotalSpent > 0 && "total spent",
+            ].filter(Boolean);
+
+            toast.success("HTML parsed successfully", {
+                description: extractedFields.length > 0
+                    ? `Extracted: ${extractedFields.join(", ")}. Review the Job tab and click Submit.`
+                    : "No fields could be extracted. Check the HTML and try again."
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Invalid HTML";
+            toast.error("HTML parse error", { description: message });
+        }
+    }
+
     // ---------- Render ----------
 
     return (
@@ -222,6 +272,14 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                         >
                             Paste JSON
                         </Button>
+                        <Button
+                            type="button"
+                            variant={mode === "html" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setMode("html")}
+                        >
+                            Paste HTML
+                        </Button>
                     </div>
                 </div>
             </CardHeader>
@@ -243,6 +301,29 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                         </div>
                         <Button type="submit" className="w-full">
                             Parse & Load into Form
+                        </Button>
+                    </form>
+                )}
+
+                {/* ---------- HTML Mode ---------- */}
+                {mode === "html" && (
+                    <form onSubmit={htmlForm.handleSubmit(onHtmlSubmit)} className="space-y-4">
+                        <div>
+                            <Label htmlFor="rawHtml">Paste Upwork job listing HTML</Label>
+                            <Textarea
+                                id="rawHtml"
+                                rows={16}
+                                placeholder="<html>...</html>"
+                                className="mt-1.5 font-mono text-sm"
+                                {...htmlForm.register("rawHtml")}
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Right-click the Upwork job page → View Page Source → Copy all → Paste here
+                            </p>
+                            <FieldError message={htmlForm.formState.errors.rawHtml?.message} />
+                        </div>
+                        <Button type="submit" className="w-full">
+                            Parse HTML &amp; Load into Form
                         </Button>
                     </form>
                 )}
