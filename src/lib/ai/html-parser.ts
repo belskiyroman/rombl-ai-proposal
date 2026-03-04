@@ -69,13 +69,19 @@ function extractDescription(doc: Document): string {
     const dataDesc =
         doc.querySelector('[data-test="Description"]') ??
         doc.querySelector('[data-test="UpCDescription"]');
-    if (dataDesc?.textContent?.trim()) return cleanText(dataDesc.textContent);
+    if (dataDesc) {
+        const text = htmlToReadableText(dataDesc);
+        if (text.length > 10) return cleanText(text);
+    }
 
     // Strategy 2: class containing "description" in a card/section
     const descByClass = doc.querySelector(
         '[class*="description"], [class*="Description"]'
     );
-    if (descByClass?.textContent?.trim()) return cleanText(descByClass.textContent);
+    if (descByClass) {
+        const text = htmlToReadableText(descByClass);
+        if (text.length > 10) return cleanText(text);
+    }
 
     // Strategy 3: section with "description" heading
     const sections = doc.querySelectorAll("section, .up-card-section, [class*='card-section']");
@@ -325,10 +331,52 @@ function extractClientTotalSpent(doc: Document): number {
 
 // ---------- Helpers ----------
 
+/**
+ * Convert an HTML element's innerHTML into readable plain text,
+ * preserving block-level boundaries (paragraphs, divs, lists, headings)
+ * as newlines — instead of collapsing everything like textContent does.
+ */
+function htmlToReadableText(el: Element): string {
+    // Clone to avoid mutating the original DOM
+    const clone = el.cloneNode(true) as Element;
+
+    // Insert newline markers before/after block-level elements
+    const blocks = clone.querySelectorAll(
+        "p, div, br, li, h1, h2, h3, h4, h5, h6, ul, ol, tr, section, header, footer, article"
+    );
+    for (const block of blocks) {
+        // Add newline before the block tag
+        block.insertAdjacentText("beforebegin", "\n");
+        // br is self-closing, others also get newline after
+        if (block.tagName === "BR") continue;
+        block.insertAdjacentText("afterend", "\n");
+    }
+
+    // Add dash before list items
+    const listItems = clone.querySelectorAll("li");
+    for (const li of listItems) {
+        li.insertAdjacentText("afterbegin", "- ");
+    }
+
+    return clone.textContent ?? "";
+}
+
 function cleanText(text: string): string {
     return text
-        .replace(/\s+/g, " ")
-        .replace(/\n\s*\n/g, "\n")
+        // Normalize line endings
+        .replace(/\r\n/g, "\n")
+        // Convert bullet/diamond markers into newline + dash
+        .replace(/\s*[◆◇✦⬥]\s*/g, "\n\n")
+        .replace(/\s*[•●∙▪▸►]\s*/g, "\n- ")
+        // Collapse runs of spaces (but not newlines) into one space
+        .replace(/[^\S\n]+/g, " ")
+        // Collapse 3+ newlines into 2
+        .replace(/\n{3,}/g, "\n\n")
+        // Trim each line
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line, i, arr) => line !== "" || (i > 0 && arr[i - 1] !== ""))
+        .join("\n")
         .trim();
 }
 
