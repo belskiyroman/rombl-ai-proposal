@@ -107,45 +107,94 @@ function extractDescription(doc: Document): string {
 function extractSkills(doc: Document): string[] {
     const skills: string[] = [];
 
-    // Strategy 1: data-test="skill" or similar
+    function addSkill(text: string | null | undefined) {
+        const t = text?.trim();
+        if (t && t.length > 0 && t.length < 60 && !skills.includes(t)) {
+            skills.push(t);
+        }
+    }
+
+    /**
+     * Check if an element is a "leaf" skill element (the text is the skill itself)
+     * vs a container (parent wrapping multiple skill children).
+     * A container has multiple child elements whose combined text ≈ its textContent.
+     */
+    function extractFromElement(el: Element) {
+        const childEls = el.querySelectorAll(
+            "span, a, .air3-token, [class*='token'], [class*='badge'], [class*='tag']"
+        );
+        // If element has child elements that look like individual skills, extract each
+        if (childEls.length > 1) {
+            // Find leaf-level children (no nested skill-like children)
+            for (const child of childEls) {
+                const nestedChildren = child.querySelectorAll(
+                    "span, a, .air3-token, [class*='token'], [class*='badge'], [class*='tag']"
+                );
+                if (nestedChildren.length === 0) {
+                    addSkill(child.textContent);
+                }
+            }
+        } else {
+            // Leaf element — its text is the skill
+            addSkill(el.textContent);
+        }
+    }
+
+    // Strategy 1: data-test="Skill" / "skill" / "SkillsList"
     const skillEls = doc.querySelectorAll(
-        '[data-test="Skill"], [data-test="skill"], [data-test*="skill"]'
+        '[data-test="Skill"], [data-test="skill"], [data-test*="skill"]:not([data-test*="SkillsList"])'
     );
     for (const el of skillEls) {
-        const text = el.textContent?.trim();
-        if (text && !skills.includes(text)) skills.push(text);
+        addSkill(el.textContent);
     }
     if (skills.length > 0) return skills;
 
-    // Strategy 2: skill badges by class
-    const badgeEls = doc.querySelectorAll(
-        '[class*="skill"], .air3-token, [class*="Skill"], .up-skill-badge'
-    );
-    for (const el of badgeEls) {
-        const text = el.textContent?.trim();
-        if (text && text.length < 60 && !skills.includes(text)) skills.push(text);
-    }
-    if (skills.length > 0) return skills;
-
-    // Strategy 3: look for a "Skills" section heading and grab siblings/children
-    const allEls = doc.querySelectorAll("h2, h3, h4, h5, strong, [class*='heading']");
-    for (const heading of allEls) {
-        if (heading.textContent?.toLowerCase().includes("skills")) {
+    // Strategy 2: Look for a "Skills" section and extract individual token/badge children
+    const headings = doc.querySelectorAll("h2, h3, h4, h5, h6, strong, [class*='heading'], [class*='label']");
+    for (const heading of headings) {
+        const headingText = heading.textContent?.toLowerCase() ?? "";
+        if (headingText.includes("skills") && headingText.length < 50) {
+            // Find the nearest container (parent, sibling, or ancestor section)
             const container =
                 heading.closest("section") ??
                 heading.closest("[class*='card']") ??
+                heading.closest("[class*='group']") ??
                 heading.parentElement;
             if (container) {
-                const spans = container.querySelectorAll("span, a, .air3-token");
-                for (const s of spans) {
-                    const t = s.textContent?.trim();
-                    if (t && t.length < 60 && t !== heading.textContent?.trim() && !skills.includes(t)) {
-                        skills.push(t);
+                const tokens = container.querySelectorAll(
+                    ".air3-token, [class*='skill-badge'], [class*='up-skill'], a[class*='token'], span[class*='badge'], span[class*='token']"
+                );
+                if (tokens.length > 0) {
+                    for (const t of tokens) addSkill(t.textContent);
+                } else {
+                    // Fall back to all span/a leaf elements in the container
+                    const spans = container.querySelectorAll("span, a");
+                    for (const s of spans) {
+                        if (s.children.length === 0 && s !== heading) {
+                            addSkill(s.textContent);
+                        }
                     }
                 }
             }
-            break;
+            if (skills.length > 0) return skills;
         }
+    }
+
+    // Strategy 3: air3-token elements (common Upwork Air 3.0 pattern)
+    const air3Tokens = doc.querySelectorAll(".air3-token");
+    for (const el of air3Tokens) {
+        if (el.children.length === 0 || el.querySelector("span")) {
+            addSkill(el.textContent);
+        }
+    }
+    if (skills.length > 0) return skills;
+
+    // Strategy 4: skill badges by class — but only leaf elements or smart container extraction
+    const badgeEls = doc.querySelectorAll(
+        '[class*="skill"], [class*="Skill"], .up-skill-badge'
+    );
+    for (const el of badgeEls) {
+        extractFromElement(el);
     }
 
     return skills;
@@ -183,7 +232,19 @@ function extractClientLocation(doc: Document): string {
         }
     }
 
-    // Strategy 3: scan for known country-flag icon nearby or text patterns
+    // Strategy 3: Look for country flag image with country name in data-v-* or alt
+    const flagImgs = doc.querySelectorAll('img[alt][src*="flag"], [class*="flag"]');
+    for (const img of flagImgs) {
+        const alt = img.getAttribute("alt")?.trim();
+        if (alt) return countryToCode(alt);
+    }
+
+    // Strategy 4: Look for text pattern near "Location" label
+    const bodyText = doc.body?.textContent ?? "";
+    const locMatch = bodyText.match(/(?:location|country)[:\s]+([A-Za-z][A-Za-z ]+?)(?:\s*[\n|•·,]|$)/im);
+    if (locMatch?.[1]) return countryToCode(locMatch[1].trim());
+
+    // Strategy 5: scan innerHTML for known country-flag icon nearby or text patterns
     const allText = doc.body?.innerHTML ?? "";
     const countryMatch = allText.match(
         /client\s+(?:location|country)[^<]*?<[^>]*>([^<]+)/i
@@ -206,30 +267,39 @@ function extractClientReview(doc: Document): number {
     }
 
     // Strategy 2: aria-label on stars
-    const starsEl = doc.querySelector('[aria-label*="Rating"]');
+    const starsEl = doc.querySelector('[aria-label*="Rating"], [aria-label*="rating"]');
     if (starsEl) {
         const match = starsEl.getAttribute("aria-label")?.match(/([\d.]+)/);
         if (match) return clamp(parseFloat(match[1]), 0, 5);
     }
 
+    // Strategy 3: text pattern "X.X out of 5" or "Rating: X.X"
+    const bodyText = doc.body?.textContent ?? "";
+    const ratingMatch = bodyText.match(/(\d\.\d+)\s*(?:out of|of)\s*5/i);
+    if (ratingMatch) return clamp(parseFloat(ratingMatch[1]), 0, 5);
+
     return 0;
 }
 
 function extractClientReviewAmount(doc: Document): number {
-    // Look for review count pattern "(123 reviews)" or "123 reviews"
     const bodyText = doc.body?.textContent ?? "";
+
+    // Pattern: "(123 reviews)" or "123 reviews" or "123 jobs posted"
     const match = bodyText.match(/\(?\s*([\d,]+)\s*reviews?\s*\)?/i);
     if (match) return parseInt(match[1].replace(/,/g, ""), 10) || 0;
+
+    // Pattern: "X jobs posted" (alternative metric)
+    const jobsMatch = bodyText.match(/(\d+)\s*jobs?\s*posted/i);
+    if (jobsMatch) return parseInt(jobsMatch[1], 10) || 0;
 
     return 0;
 }
 
 function extractClientTotalSpent(doc: Document): number {
-    // Look for "$X.XXK+ spent" or "$X,XXX total spent" patterns
     const bodyText = doc.body?.textContent ?? "";
 
-    // Pattern: "$50K+ total spent" or "$1.2M total spent"
-    const kMatch = bodyText.match(/\$\s*([\d,.]+)\s*([KkMm])[\+]?\s*(?:total\s*)?spent/i);
+    // Pattern: "$50K+ total spent" or "$1.2M total spent" or "$50K+ spent"
+    const kMatch = bodyText.match(/\$\s*([\d,.]+)\s*([KkMm])\+?\s*(?:total\s*)?spent/i);
     if (kMatch) {
         const num = parseFloat(kMatch[1].replace(/,/g, ""));
         const multiplier = kMatch[2].toLowerCase() === "m" ? 1_000_000 : 1_000;
@@ -241,6 +311,14 @@ function extractClientTotalSpent(doc: Document): number {
         /\$\s*([\d,]+(?:\.\d+)?)\s*(?:total\s*)?spent/i
     );
     if (dollarMatch) return parseFloat(dollarMatch[1].replace(/,/g, "")) || 0;
+
+    // Pattern: just "$50K+" near client section without "spent" keyword
+    const shortKMatch = bodyText.match(/\$\s*([\d,.]+)\s*([KkMm])\+/i);
+    if (shortKMatch) {
+        const num = parseFloat(shortKMatch[1].replace(/,/g, ""));
+        const multiplier = shortKMatch[2].toLowerCase() === "m" ? 1_000_000 : 1_000;
+        return num * multiplier;
+    }
 
     return 0;
 }
@@ -300,6 +378,7 @@ const COUNTRY_CODES: Record<string, string> = {
     vietnam: "VN",
     thailand: "TH",
     malaysia: "MY",
+    myanmar: "MM",
     colombia: "CO",
     chile: "CL",
     romania: "RO",

@@ -119,6 +119,37 @@ describe("parseUpworkJobHtml", () => {
             const result = parseUpworkJobHtml(EMPTY_HTML);
             expect(result.skills).toEqual([]);
         });
+
+        it("extracts individual skills from parent container (Upwork Air 3.0 pattern)", () => {
+            const html = `<html><body>
+                <div class="skills-list">
+                    <h5>Skills and Expertise</h5>
+                    <div class="air3-token-container">
+                        <span class="air3-token">B2B Marketing</span>
+                        <span class="air3-token">SaaS</span>
+                        <span class="air3-token">Product Demonstration</span>
+                        <span class="air3-token">Deal Closure</span>
+                    </div>
+                </div>
+            </body></html>`;
+            const result = parseUpworkJobHtml(html);
+            expect(result.skills).toEqual(["B2B Marketing", "SaaS", "Product Demonstration", "Deal Closure"]);
+        });
+
+        it("extracts skills from parent element with class*='skill' without concatenating", () => {
+            const html = `<html><body>
+                <div class="up-skill-wrapper">
+                    <a class="up-skill-badge">React</a>
+                    <a class="up-skill-badge">Node.js</a>
+                    <a class="up-skill-badge">GraphQL</a>
+                </div>
+            </body></html>`;
+            const result = parseUpworkJobHtml(html);
+            expect(result.skills).toContain("React");
+            expect(result.skills).toContain("Node.js");
+            expect(result.skills).toContain("GraphQL");
+            expect(result.skills.length).toBe(3);
+        });
     });
 
     describe("project type extraction", () => {
