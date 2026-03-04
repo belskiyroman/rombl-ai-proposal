@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 
 import { ConvexClientProvider } from "@/app/convex-client-provider";
-import { Toaster } from "sonner";
+import { Toaster } from "@/src/components/ui/toaster";
 import "@/app/globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className={inter.className}>
         <ConvexClientProvider>
           {children}
-          <Toaster richColors position="top-right" />
+          <Toaster />
         </ConvexClientProvider>
       </body>
     </html>

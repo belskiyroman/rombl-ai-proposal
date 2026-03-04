@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 
-import { IngestionForm } from "@/components/ingestion-form";
-import { ExtractionResults, type ExtractionResultsData } from "@/components/extraction-results";
-import { Separator } from "@/components/ui/separator";
+import { ExtractionResults, type ExtractionResultsData } from "@/src/components/ExtractionResults";
+import { IngestionForm } from "@/src/components/IngestionForm";
 
 /**
  * Phase 1: Knowledge Ingestion page.
@@ -41,7 +40,7 @@ export default function IngestPage() {
 
                 {results && (
                     <>
-                        <Separator />
+                        <div className="h-px w-full bg-border" />
                         <ExtractionResults data={results} />
                     </>
                 )}
