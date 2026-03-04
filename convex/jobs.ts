@@ -1,5 +1,6 @@
-import { actionGeneric, mutationGeneric } from "convex/server";
+import { actionGeneric, internalMutationGeneric } from "convex/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 import { createOpenAIAgentRunners } from "../src/lib/ai/agents";
 import { runAnalyzerOnlyGraph } from "../src/lib/ai/graph";
@@ -87,6 +88,22 @@ export interface IngestJobProposalPairDependencies {
   insertStyleProfile: (document: StyleProfileDocument) => Promise<string>;
   insertProcessedProposal: (document: ProcessedProposalDocument) => Promise<string>;
   now?: () => number;
+}
+
+type RunMutationInvoker = (mutation: unknown, args: unknown) => Promise<string>;
+
+export function createIngestionMutationAdapters(runMutation: RunMutationInvoker): Pick<
+  IngestJobProposalPairDependencies,
+  "insertRawJob" | "insertStyleProfile" | "insertProcessedProposal"
+> {
+  return {
+    insertRawJob: (document) => runMutation(internal.jobs.insertRawJobRecord, { document }),
+    insertStyleProfile: (document) => runMutation(internal.jobs.insertStyleProfileRecord, { document }),
+    insertProcessedProposal: (document) =>
+      runMutation(internal.jobs.insertProcessedProposalRecord, {
+        document
+      })
+  };
 }
 
 export async function runIngestJobProposalPair(
@@ -182,7 +199,7 @@ export async function runIngestJobProposalPair(
   };
 }
 
-export const insertRawJobRecord = mutationGeneric({
+export const insertRawJobRecord = internalMutationGeneric({
   args: {
     document: v.object({
       source: sourceValidator,
@@ -208,7 +225,7 @@ export const insertRawJobRecord = mutationGeneric({
   }
 });
 
-export const insertStyleProfileRecord = mutationGeneric({
+export const insertStyleProfileRecord = internalMutationGeneric({
   args: {
     document: v.object({
       source: sourceValidator,
@@ -231,7 +248,7 @@ export const insertStyleProfileRecord = mutationGeneric({
   }
 });
 
-export const insertProcessedProposalRecord = mutationGeneric({
+export const insertProcessedProposalRecord = internalMutationGeneric({
   args: {
     document: v.object({
       source: sourceValidator,
@@ -267,6 +284,10 @@ export const ingestJobProposalPair = actionGeneric({
   },
   handler: async (ctx, args) => {
     const runners = createOpenAIAgentRunners(args.chatModel);
+    const mutationAdapters = createIngestionMutationAdapters(
+      (mutation, mutationArgs) =>
+        (ctx.runMutation as (mutationRef: unknown, args: unknown) => Promise<string>)(mutation, mutationArgs)
+    );
 
     return runIngestJobProposalPair(
       {
@@ -330,22 +351,7 @@ export const ingestJobProposalPair = actionGeneric({
             executionTrace: state.executionTrace
           };
         },
-        insertRawJob: (document) =>
-          (ctx.runMutation as (mutation: unknown, args: unknown) => Promise<string>)(insertRawJobRecord, {
-            document
-          }),
-        insertStyleProfile: (document) =>
-          (ctx.runMutation as (mutation: unknown, args: unknown) => Promise<string>)(insertStyleProfileRecord, {
-            document
-          }),
-        insertProcessedProposal: (document) =>
-          (ctx.runMutation as (mutation: unknown, args: unknown) => Promise<string>)(insertProcessedProposalRecord, {
-            document: {
-              ...document,
-              rawJobId: document.rawJobId as unknown as string,
-              styleProfileId: document.styleProfileId as unknown as string
-            }
-          })
+        ...mutationAdapters
       }
     );
   }

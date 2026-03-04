@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getRequiredOpenAIApiKey } from "./openai-config";
 
 export interface EmbeddingsClient {
   embeddings: {
@@ -26,7 +27,7 @@ export async function generateEmbedding(
   const client =
     options.client ??
     new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
+      apiKey: getRequiredOpenAIApiKey()
     });
   const model = options.model ?? defaultModel;
 
