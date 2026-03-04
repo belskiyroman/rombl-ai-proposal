@@ -78,7 +78,7 @@ function BooleanBadgeField({
 }) {
   return (
     <button type="button" onClick={() => onChange(!value)} className="inline-flex items-center gap-1.5">
-      <Badge variant={value ? "default" : "secondary"} className="cursor-pointer select-none">
+      <Badge variant={value ? "default" : "outline"} className="cursor-pointer select-none px-3 py-1">
         {label}: {value ? "Yes" : "No"}
       </Badge>
     </button>
@@ -179,20 +179,20 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
   }
 
   return (
-    <Card>
+    <Card className="border-0 shadow-lg">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <CardTitle>Ingest Job-Proposal Pair</CardTitle>
+            <CardTitle className="text-xl">Ingest Job-Proposal Pair</CardTitle>
             <CardDescription className="mt-1">
               Submit historical Job, Proposal, and Member data to build retrieval and style profile memory.
             </CardDescription>
           </div>
-          <div className="flex gap-2">
-            <Button type="button" size="sm" variant={mode === "form" ? "default" : "outline"} onClick={() => setMode("form")}>
+          <div className="flex rounded-lg border bg-muted p-0.5">
+            <Button type="button" size="sm" variant={mode === "form" ? "default" : "ghost"} className="rounded-md" onClick={() => setMode("form")}>
               Form
             </Button>
-            <Button type="button" size="sm" variant={mode === "json" ? "default" : "outline"} onClick={() => setMode("json")}>
+            <Button type="button" size="sm" variant={mode === "json" ? "default" : "ghost"} className="rounded-md" onClick={() => setMode("json")}>
               Paste JSON
             </Button>
           </div>
@@ -228,9 +228,9 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onFormSubmit)} className="space-y-6">
-              <Card>
+              <Card className="transition-shadow hover:shadow-md">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Job</CardTitle>
+                  <CardTitle className="text-base font-semibold">Job</CardTitle>
                   <CardDescription>Client context, scope, and source job description.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -374,10 +374,10 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                                   <Badge
                                     key={skill}
                                     variant="secondary"
-                                    className="cursor-pointer"
+                                    className="cursor-pointer gap-1 pr-1.5 hover:bg-destructive/10 hover:text-destructive"
                                     onClick={() => removeSkill(skill)}
                                   >
-                                    {skill} x
+                                    {skill} <span className="text-[10px] leading-none">✕</span>
                                   </Badge>
                                 ))}
                               </div>
@@ -405,9 +405,9 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="transition-shadow hover:shadow-md">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Proposal</CardTitle>
+                  <CardTitle className="text-base font-semibold">Proposal</CardTitle>
                   <CardDescription>Outcome signals and the full proposal body.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -532,9 +532,9 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="transition-shadow hover:shadow-md">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Member</CardTitle>
+                  <CardTitle className="text-base font-semibold">Member</CardTitle>
                   <CardDescription>Author profile and agency context.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -639,7 +639,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                 </CardContent>
               </Card>
 
-              <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+              <Button type="submit" className="w-full h-11 text-base font-semibold shadow-md" disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? (
                   <>
                     <Loader2 className={cn("mr-2 h-4 w-4 animate-spin")} />

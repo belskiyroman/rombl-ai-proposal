@@ -2,7 +2,6 @@
 
 import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
-import { cn } from "@/src/lib/utils";
 
 export interface WritingStyleAnalysis {
   formality: number;
@@ -28,15 +27,18 @@ function ScoreBar({ label, score, max = 10 }: { label: string; score: number; ma
   const pct = Math.max(0, Math.min(100, Math.round((score / max) * 100)));
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-foreground">{label}</span>
         <span className="tabular-nums text-muted-foreground">
           {score}/{max}
         </span>
       </div>
-      <div className="h-2 w-full rounded-full bg-secondary">
-        <div className={cn("h-full rounded-full bg-primary transition-all duration-500")} style={{ width: `${pct}%` }} />
+      <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );
@@ -47,9 +49,9 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold tracking-tight">Extraction Results</h2>
+      <h2 className="text-lg font-semibold tracking-tight text-foreground">Extraction Results</h2>
 
-      <Card>
+      <Card className="transition-shadow hover:shadow-md">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Created Records</CardTitle>
           <CardDescription>IDs of documents stored by the ingestion workflow</CardDescription>
@@ -58,22 +60,22 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
           <div className="grid gap-2 text-sm sm:grid-cols-3">
             <div>
               <span className="text-muted-foreground">Raw Job:</span>{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{rawJobId}</code>
+              <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{rawJobId}</code>
             </div>
             <div>
               <span className="text-muted-foreground">Style Profile:</span>{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{styleProfileId}</code>
+              <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{styleProfileId}</code>
             </div>
             <div>
               <span className="text-muted-foreground">Processed Proposal:</span>{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{processedProposalId}</code>
+              <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{processedProposalId}</code>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {techStack && techStack.length > 0 ? (
-        <Card>
+        <Card className="transition-shadow hover:shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Extracted Tech Stack</CardTitle>
             <CardDescription>Technologies identified by the Analyzer</CardDescription>
@@ -91,7 +93,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
       ) : null}
 
       {writingStyleAnalysis ? (
-        <Card>
+        <Card className="transition-shadow hover:shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Writing Style Analysis</CardTitle>
             <CardDescription>Tone and structure extracted from the proposal text</CardDescription>
@@ -126,7 +128,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
       ) : null}
 
       {executionTrace.length > 0 ? (
-        <Card>
+        <Card className="transition-shadow hover:shadow-md">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Execution Trace</CardTitle>
             <CardDescription>Ingestion pipeline steps completed</CardDescription>

@@ -4,6 +4,7 @@ const config: Config = {
   darkMode: ["class"],
   content: [
     "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
     "./lib/**/*.{ts,tsx}"
   ],
@@ -45,9 +46,19 @@ const config: Config = {
         ring: "hsl(var(--ring))"
       },
       borderRadius: {
+        xl: "calc(var(--radius) + 4px)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)"
+      },
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0", transform: "translateY(4px)" },
+          to: { opacity: "1", transform: "translateY(0)" }
+        }
+      },
+      animation: {
+        "fade-in": "fade-in 0.3s ease-out"
       }
     }
   },
