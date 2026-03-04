@@ -10,6 +10,7 @@
 
 import type * as embeddings from "../embeddings.js";
 import type * as generate from "../generate.js";
+import type * as jobs from "../jobs.js";
 
 import type {
   ApiFromModules,
@@ -20,6 +21,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   embeddings: typeof embeddings;
   generate: typeof generate;
+  jobs: typeof jobs;
 }>;
 
 /**

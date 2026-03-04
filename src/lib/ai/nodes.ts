@@ -1,4 +1,11 @@
-import { runAnalyzerAgent, runCriticAgent, runWriterAgent, type LlmInvoker, type WriterInvoker } from "./agents";
+import {
+  normalizeAnalyzerOutput,
+  runAnalyzerAgent,
+  runCriticAgent,
+  runWriterAgent,
+  type LlmInvoker,
+  type WriterInvoker
+} from "./agents";
 import { analyzerOutputSchema, criticOutputSchema, type AnalyzerOutput, type CriticOutput } from "./schemas";
 import type { ProposalGraphState } from "./state";
 
@@ -26,7 +33,7 @@ export async function runAnalyzerNode(
     styleProfile = await runAnalyzerAgent(state, dependencies.analyzer);
   } else if (dependencies.analyze) {
     const rawOutput = await dependencies.analyze(state.newJobDescription);
-    styleProfile = analyzerOutputSchema.parse(rawOutput);
+    styleProfile = normalizeAnalyzerOutput(analyzerOutputSchema.parse(rawOutput));
   } else {
     throw new Error("Analyzer node dependencies were not provided.");
   }
