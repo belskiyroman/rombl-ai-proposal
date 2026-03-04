@@ -51,7 +51,7 @@ export function buildCriticPrompt(state: ProposalGraphState): string {
 
 export async function runAnalyzerAgent(state: ProposalGraphState, llm: LlmInvoker): Promise<AnalyzerOutput> {
   const raw = await llm.invoke(buildAnalyzerPrompt(state));
-  return analyzerOutputSchema.parse(raw);
+  return normalizeAnalyzerOutput(analyzerOutputSchema.parse(raw));
 }
 
 export async function runWriterAgent(state: ProposalGraphState, llm: WriterInvoker): Promise<string> {
@@ -62,6 +62,41 @@ export async function runWriterAgent(state: ProposalGraphState, llm: WriterInvok
 export async function runCriticAgent(state: ProposalGraphState, llm: LlmInvoker): Promise<CriticOutput> {
   const raw = await llm.invoke(buildCriticPrompt(state));
   return criticOutputSchema.parse(raw);
+}
+
+function normalizeStringList(values: string[]): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    const cleaned = value.trim().replace(/\s+/g, " ");
+    if (!cleaned) {
+      continue;
+    }
+
+    const dedupeKey = cleaned.toLowerCase();
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+
+    seen.add(dedupeKey);
+    normalized.push(cleaned);
+  }
+
+  return normalized;
+}
+
+export function normalizeAnalyzerOutput(output: AnalyzerOutput): AnalyzerOutput {
+  return {
+    ...output,
+    tech_stack: normalizeStringList(output.tech_stack),
+    writing_style_analysis: {
+      ...output.writing_style_analysis,
+      key_vocabulary: normalizeStringList(output.writing_style_analysis.key_vocabulary),
+      sentence_structure: output.writing_style_analysis.sentence_structure.trim().replace(/\s+/g, " ")
+    },
+    project_constraints: normalizeStringList(output.project_constraints)
+  };
 }
 
 function normalizeAiContent(content: unknown): string {

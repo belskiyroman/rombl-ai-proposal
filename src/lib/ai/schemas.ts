@@ -1,15 +1,7 @@
 import { z } from "zod";
+import { analyzerOutputSchema } from "./types";
 
-export const analyzerOutputSchema = z.object({
-  tech_stack: z.array(z.string()),
-  writing_style_analysis: z.object({
-    formality: z.number().min(1).max(10),
-    enthusiasm: z.number().min(1).max(10),
-    key_vocabulary: z.array(z.string()),
-    sentence_structure: z.string()
-  }),
-  project_constraints: z.array(z.string())
-});
+export { analyzerOutputSchema };
 
 export const criticOutputSchema = z
   .object({
