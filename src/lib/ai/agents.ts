@@ -3,6 +3,8 @@ import { ChatOpenAI } from "@langchain/openai";
 import { analyzerOutputSchema, criticOutputSchema, type AnalyzerOutput, type CriticOutput } from "./schemas";
 import type { ProposalGraphState } from "./state";
 import { analyzerSystemPrompt, criticSystemPrompt, writerSystemPrompt } from "./prompts";
+import { getRequiredOpenAIApiKey } from "./openai-config";
+import { ensureRuntimeGlobals } from "./runtime-polyfills";
 
 export interface LlmInvoker {
   invoke: (prompt: string) => Promise<unknown>;
@@ -135,11 +137,13 @@ export function resolveOpenAIModel(modelName?: string): string {
 }
 
 export function createOpenAIAgentRunners(modelName?: string): AgentRunners {
+  ensureRuntimeGlobals();
+
   const resolvedModelName = resolveOpenAIModel(modelName);
   const chatModel = new ChatOpenAI({
     model: resolvedModelName,
     temperature: 0.2,
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: getRequiredOpenAIApiKey()
   });
 
   const analyzerModel = chatModel.withStructuredOutput(analyzerOutputSchema, {
