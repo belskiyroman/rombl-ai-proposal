@@ -22,7 +22,6 @@ export const ProposalStateAnnotation = Annotation.Root({
 });
 
 export interface ProposalGraphNodeDependencies {
-  analyzer: AnalyzerNodeDependencies;
   writer: WriterNodeDependencies;
   critic: CriticNodeDependencies;
 }
@@ -44,11 +43,9 @@ export function routeAfterCritic(state: ProposalGraphState): "writer" | typeof E
 
 export function createProposalGraph(dependencies: ProposalGraphNodeDependencies) {
   return new StateGraph(ProposalStateAnnotation)
-    .addNode("analyzer", (state: ProposalGraphState) => runAnalyzerNode(state, dependencies.analyzer))
     .addNode("writer", (state: ProposalGraphState) => runWriterNode(state, dependencies.writer))
     .addNode("critic", (state: ProposalGraphState) => runCriticNode(state, dependencies.critic))
-    .addEdge(START, "analyzer")
-    .addEdge("analyzer", "writer")
+    .addEdge(START, "writer")
     .addEdge("writer", "critic")
     .addConditionalEdges("critic", routeAfterCritic, ["writer", END]);
 }

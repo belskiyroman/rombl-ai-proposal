@@ -32,15 +32,43 @@ export function buildAnalyzerPrompt(state: ProposalGraphState): string {
 }
 
 export function buildWriterPrompt(state: ProposalGraphState): string {
-  return `${writerSystemPrompt}\n\nNew Job Description:\n${state.newJobDescription}\n\nStyle Profile:\n${JSON.stringify(
-    state.styleProfile,
-    null,
-    2
-  )}\n\nRetrieved Similar Proposals:\n${JSON.stringify(state.ragContext, null, 2)}\n\n${
+  const fewShotExamples =
+    state.ragContext.length === 0
+      ? "No retrieved examples."
+      : state.ragContext
+          .map(
+            (pair, index) =>
+              `Example ${index + 1}\nJob:\n${pair.jobText}\n\nWinning Proposal:\n${pair.proposalText}\n\nSimilarity:${
+                pair.similarity ?? "n/a"
+              }`
+          )
+          .join("\n\n---\n\n");
+
+  const styleBlock = state.styleProfile
+    ? `Formality: ${state.styleProfile.writing_style_analysis.formality}\nEnthusiasm: ${
+        state.styleProfile.writing_style_analysis.enthusiasm
+      }\nKey vocabulary: ${state.styleProfile.writing_style_analysis.key_vocabulary.join(
+        ", "
+      )}\nSentence structure: ${state.styleProfile.writing_style_analysis.sentence_structure}`
+    : "Style profile unavailable.";
+
+  const revisionBlock =
     state.criticFeedback?.status === "NEEDS_REVISION"
-      ? `Revision feedback:\n${(state.criticFeedback.critique_points || []).join("\n")}\n\n`
-      : ""
-  }Write only the final proposal text.`;
+      ? `Revision Feedback:\n${(state.criticFeedback.critique_points || []).join("\n")}\n\n`
+      : "";
+
+  return `${writerSystemPrompt}
+
+New Job Description:
+${state.newJobDescription}
+
+Style Profile:
+${styleBlock}
+
+Few-shot Examples:
+${fewShotExamples}
+
+${revisionBlock}Write only the final proposal in clean markdown.`;
 }
 
 export function buildCriticPrompt(state: ProposalGraphState): string {

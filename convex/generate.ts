@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { createOpenAIAgentRunners } from "../src/lib/ai/agents";
 import { generateEmbedding } from "../src/lib/ai/embeddings";
 import { runProposalGraph } from "../src/lib/ai/graph";
+import type { AnalyzerOutput } from "../src/lib/ai/schemas";
 import {
   createInitialState,
   defaultMaxRevisions,
@@ -11,14 +12,14 @@ import {
   type RagContextItem
 } from "../src/lib/ai/state";
 
-export interface GenerateProposalArgs {
+export interface CreateProposalArgs {
   newJobDescription: string;
   maxRevisions?: number;
   embeddingModel?: string;
   chatModel?: string;
 }
 
-export interface GenerateProposalResult {
+export interface CreateProposalResult {
   finalProposal: string;
   criticStatus: "APPROVED" | "NEEDS_REVISION";
   critiquePoints?: string[];
@@ -26,22 +27,152 @@ export interface GenerateProposalResult {
   state: ProposalGraphState;
 }
 
-export interface GenerateProposalDependencies {
+interface RetrievedRawJob {
+  _id: string;
+  text: string;
+  title: string;
+  techStack: string[];
+}
+
+interface RetrievedProposal {
+  _id: string;
+  text: string;
+  styleProfileId: string;
+}
+
+interface RetrievedStyleProfile {
+  _id: string;
+  writingStyleAnalysis: {
+    formality: number;
+    enthusiasm: number;
+    keyVocabulary: string[];
+    sentenceStructure: string;
+  };
+}
+
+export interface RetrieveRagContextArgs {
+  newJobDescription: string;
+  limit?: number;
+}
+
+export interface RetrieveRagContextDependencies {
   embed: (input: string) => Promise<number[]>;
-  searchRag: (embedding: number[], jobDescription: string) => Promise<RagContextItem[]>;
+  vectorSearch: (embedding: number[], limit: number) => Promise<Array<{ _id: string; _score: number }>>;
+  getRawJob: (rawJobId: string) => Promise<RetrievedRawJob | null>;
+  getProposalByRawJobId: (rawJobId: string) => Promise<RetrievedProposal | null>;
+  getStyleProfileById: (styleProfileId: string) => Promise<RetrievedStyleProfile | null>;
+}
+
+function clampRagLimit(limit?: number): number {
+  return Math.max(1, Math.min(limit ?? 3, 3));
+}
+
+export async function runRetrieveRagContext(
+  args: RetrieveRagContextArgs,
+  dependencies: RetrieveRagContextDependencies
+): Promise<RagContextItem[]> {
+  const limit = clampRagLimit(args.limit);
+  const embedding = await dependencies.embed(args.newJobDescription);
+  const vectorMatches = (await dependencies.vectorSearch(embedding, limit)).slice(0, limit);
+  const ragItems: RagContextItem[] = [];
+
+  for (const match of vectorMatches) {
+    const rawJob = await dependencies.getRawJob(match._id);
+    if (!rawJob) {
+      continue;
+    }
+
+    const proposal = await dependencies.getProposalByRawJobId(rawJob._id);
+    if (!proposal) {
+      continue;
+    }
+
+    const styleProfile = await dependencies.getStyleProfileById(proposal.styleProfileId);
+    if (!styleProfile) {
+      continue;
+    }
+
+    ragItems.push({
+      rawJobId: rawJob._id,
+      proposalId: proposal._id,
+      styleProfileId: styleProfile._id,
+      jobTitle: rawJob.title,
+      jobText: rawJob.text,
+      proposalText: proposal.text,
+      techStack: rawJob.techStack,
+      styleProfile: {
+        formality: styleProfile.writingStyleAnalysis.formality,
+        enthusiasm: styleProfile.writingStyleAnalysis.enthusiasm,
+        keyVocabulary: styleProfile.writingStyleAnalysis.keyVocabulary,
+        sentenceStructure: styleProfile.writingStyleAnalysis.sentenceStructure
+      },
+      similarity: match._score
+    });
+  }
+
+  return ragItems;
+}
+
+export interface CreateProposalDependencies {
+  retrieveRagContext: (args: RetrieveRagContextArgs) => Promise<RagContextItem[]>;
+  getGlobalStyleProfile: () => Promise<AnalyzerOutput | null>;
   runGraph: (initialState: ProposalGraphState) => Promise<ProposalGraphState>;
 }
 
-export async function runGenerateProposal(
-  args: GenerateProposalArgs,
-  dependencies: GenerateProposalDependencies
-): Promise<GenerateProposalResult> {
-  const embedding = await dependencies.embed(args.newJobDescription);
-  const ragContext = await dependencies.searchRag(embedding, args.newJobDescription);
+function uniquePreserveOrder(values: string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    const cleaned = value.trim();
+    if (!cleaned) {
+      continue;
+    }
+    const dedupeKey = cleaned.toLowerCase();
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    result.push(cleaned);
+  }
+
+  return result;
+}
+
+function mergeStyleProfileWithRagTechStack(
+  styleProfile: AnalyzerOutput,
+  ragContext: RagContextItem[]
+): AnalyzerOutput {
+  const ragTechStack = uniquePreserveOrder(ragContext.flatMap((item) => item.techStack ?? []));
+
+  if (styleProfile.tech_stack.length > 0 || ragTechStack.length === 0) {
+    return styleProfile;
+  }
+
+  return {
+    ...styleProfile,
+    tech_stack: ragTechStack
+  };
+}
+
+export async function runCreateProposal(
+  args: CreateProposalArgs,
+  dependencies: CreateProposalDependencies
+): Promise<CreateProposalResult> {
+  const ragContext = await dependencies.retrieveRagContext({
+    newJobDescription: args.newJobDescription,
+    limit: 3
+  });
+
+  const baseStyleProfile = await dependencies.getGlobalStyleProfile();
+  if (!baseStyleProfile) {
+    throw new Error("No style profile found for proposal generation.");
+  }
 
   const initialState: ProposalGraphState = {
     ...createInitialState(args.newJobDescription),
     ragContext,
+    styleProfile: mergeStyleProfileWithRagTechStack(baseStyleProfile, ragContext),
     maxRevisions: args.maxRevisions ?? defaultMaxRevisions
   };
 
@@ -57,52 +188,93 @@ export async function runGenerateProposal(
   };
 }
 
-export const searchSimilarPairs = queryGeneric({
+export const getRawJobById = queryGeneric({
   args: {
-    embedding: v.array(v.float64()),
-    limit: v.optional(v.number())
+    rawJobId: v.id("raw_jobs")
   },
   handler: async (ctx, args) => {
-    const limit = Math.max(1, Math.min(args.limit ?? 4, 8));
-    const docs = await ctx.db.query("jobProposalPairs").take(200);
+    const doc = await ctx.db.get(args.rawJobId);
+    if (!doc) {
+      return null;
+    }
 
-    return docs
-      .map((doc) => ({
-        jobText: doc.jobText,
-        proposalText: doc.proposalText,
-        similarity: cosineSimilarity(args.embedding, doc.embedding)
-      }))
-      .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
-      .slice(0, limit);
+    return {
+      _id: String(doc._id),
+      text: doc.text,
+      title: doc.title,
+      techStack: doc.techStack
+    };
   }
 });
 
-function cosineSimilarity(left: number[], right: number[]): number {
-  const size = Math.min(left.length, right.length);
-  if (size === 0) {
-    return 0;
+export const getLatestProposalByRawJobId = queryGeneric({
+  args: {
+    rawJobId: v.id("raw_jobs")
+  },
+  handler: async (ctx, args) => {
+    const proposals = await ctx.db
+      .query("processed_proposals")
+      .withIndex("by_raw_job_id", (query) => query.eq("rawJobId", args.rawJobId))
+      .order("desc")
+      .take(1);
+    const proposal = proposals[0];
+    if (!proposal) {
+      return null;
+    }
+
+    return {
+      _id: String(proposal._id),
+      text: proposal.text,
+      styleProfileId: String(proposal.styleProfileId)
+    };
   }
+});
 
-  let dot = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
+export const getStyleProfileById = queryGeneric({
+  args: {
+    styleProfileId: v.id("style_profiles")
+  },
+  handler: async (ctx, args) => {
+    const styleProfile = await ctx.db.get(args.styleProfileId);
+    if (!styleProfile) {
+      return null;
+    }
 
-  for (let index = 0; index < size; index += 1) {
-    const leftValue = left[index] ?? 0;
-    const rightValue = right[index] ?? 0;
-    dot += leftValue * rightValue;
-    leftMagnitude += leftValue * leftValue;
-    rightMagnitude += rightValue * rightValue;
+    return {
+      _id: String(styleProfile._id),
+      writingStyleAnalysis: styleProfile.writingStyleAnalysis
+    };
   }
+});
 
-  if (leftMagnitude === 0 || rightMagnitude === 0) {
-    return 0;
+export const getLatestGlobalStyleProfile = queryGeneric({
+  args: {},
+  handler: async (ctx) => {
+    const styleProfiles = await ctx.db
+      .query("style_profiles")
+      .withIndex("by_created_at")
+      .order("desc")
+      .take(1);
+
+    const latestStyleProfile = styleProfiles[0];
+    if (!latestStyleProfile) {
+      return null;
+    }
+
+    return {
+      tech_stack: [],
+      writing_style_analysis: {
+        formality: latestStyleProfile.writingStyleAnalysis.formality,
+        enthusiasm: latestStyleProfile.writingStyleAnalysis.enthusiasm,
+        key_vocabulary: latestStyleProfile.writingStyleAnalysis.keyVocabulary,
+        sentence_structure: latestStyleProfile.writingStyleAnalysis.sentenceStructure
+      },
+      project_constraints: []
+    } satisfies AnalyzerOutput;
   }
+});
 
-  return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
-}
-
-export const generateProposal = actionGeneric({
+export const createProposal = actionGeneric({
   args: {
     newJobDescription: v.string(),
     maxRevisions: v.optional(v.number()),
@@ -112,21 +284,55 @@ export const generateProposal = actionGeneric({
   handler: async (ctx, args) => {
     const runners = createOpenAIAgentRunners(args.chatModel);
 
-    return runGenerateProposal(args, {
-      embed: (input) =>
-        generateEmbedding(input, {
-          model: args.embeddingModel
+    return runCreateProposal(args, {
+      retrieveRagContext: (retrieveArgs) =>
+        runRetrieveRagContext(retrieveArgs, {
+          embed: (input) =>
+            generateEmbedding(input, {
+              model: args.embeddingModel
+            }),
+          vectorSearch: async (embedding, limit) => {
+            const results = await ctx.vectorSearch("raw_jobs", "by_embedding", {
+              vector: embedding,
+              limit
+            });
+            return results.map((result) => ({
+              _id: String(result._id),
+              _score: result._score
+            }));
+          },
+          getRawJob: async (rawJobId) => {
+            return (ctx.runQuery as (query: unknown, args: unknown) => Promise<RetrievedRawJob | null>)(
+              getRawJobById,
+              {
+                rawJobId: rawJobId as never
+              }
+            );
+          },
+          getProposalByRawJobId: async (rawJobId) => {
+            return (ctx.runQuery as (query: unknown, args: unknown) => Promise<RetrievedProposal | null>)(
+              getLatestProposalByRawJobId,
+              {
+                rawJobId: rawJobId as never
+              }
+            );
+          },
+          getStyleProfileById: async (styleProfileId) => {
+            return (ctx.runQuery as (query: unknown, args: unknown) => Promise<RetrievedStyleProfile | null>)(
+              getStyleProfileById,
+              {
+                styleProfileId: styleProfileId as never
+              }
+            );
+          }
         }),
-      searchRag: (embedding) =>
-        (ctx.runQuery as (query: unknown, args: unknown) => Promise<RagContextItem[]>)(searchSimilarPairs, {
-          embedding,
-          limit: 4
-        }),
+      getGlobalStyleProfile: () =>
+        (ctx.runQuery as (query: unknown, args: unknown) => Promise<AnalyzerOutput | null>)(
+          getLatestGlobalStyleProfile,
+          {}
+        ),
       runGraph: (initialState) =>
         runProposalGraph(initialState, {
-          analyzer: {
-            analyzer: runners.analyzer
-          },
           writer: {
             writer: runners.writer
           },
@@ -137,3 +343,6 @@ export const generateProposal = actionGeneric({
     });
   }
 });
+
+// Backward compatible alias kept for existing callers.
+export const generateProposal = createProposal;
