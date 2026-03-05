@@ -16,7 +16,8 @@ describe("runProposalGraph loop", () => {
         critique_points: ["Clarify project milestones"]
       })
       .mockResolvedValueOnce({
-        status: "APPROVED"
+        status: "APPROVED",
+        critique_points: null
       });
 
     const initialState = {

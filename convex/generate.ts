@@ -1,9 +1,10 @@
-import { actionGeneric, queryGeneric } from "convex/server";
+import { actionGeneric, anyApi, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 
 import { createOpenAIAgentRunners } from "../src/lib/ai/agents";
 import { generateEmbedding } from "../src/lib/ai/embeddings";
 import { runProposalGraph } from "../src/lib/ai/graph";
+import { normalizeJobDescription } from "../src/lib/ai/job-description-normalizer";
 import type { AnalyzerOutput } from "../src/lib/ai/schemas";
 import {
   createInitialState,
@@ -14,6 +15,7 @@ import {
 
 export interface CreateProposalArgs {
   newJobDescription: string;
+  preferredMemberId?: number;
   maxRevisions?: number;
   embeddingModel?: string;
   chatModel?: string;
@@ -116,6 +118,7 @@ export async function runRetrieveRagContext(
 export interface CreateProposalDependencies {
   retrieveRagContext: (args: RetrieveRagContextArgs) => Promise<RagContextItem[]>;
   getGlobalStyleProfile: () => Promise<AnalyzerOutput | null>;
+  getPreferredAuthorName?: () => Promise<string | null>;
   runGraph: (initialState: ProposalGraphState) => Promise<ProposalGraphState>;
 }
 
@@ -159,8 +162,15 @@ export async function runCreateProposal(
   args: CreateProposalArgs,
   dependencies: CreateProposalDependencies
 ): Promise<CreateProposalResult> {
+  const normalizedDescription = normalizeJobDescription(args.newJobDescription);
+  if (normalizedDescription.metadata.wasTruncated) {
+    console.warn(
+      `[generate.createProposal] Truncated job description from ${normalizedDescription.metadata.originalLength} to ${normalizedDescription.metadata.finalLength} chars.`
+    );
+  }
+
   const ragContext = await dependencies.retrieveRagContext({
-    newJobDescription: args.newJobDescription,
+    newJobDescription: normalizedDescription.text,
     limit: 3
   });
 
@@ -168,9 +178,11 @@ export async function runCreateProposal(
   if (!baseStyleProfile) {
     throw new Error("No style profile found for proposal generation.");
   }
+  const preferredAuthorName = (await dependencies.getPreferredAuthorName?.())?.trim() || null;
 
   const initialState: ProposalGraphState = {
-    ...createInitialState(args.newJobDescription),
+    ...createInitialState(normalizedDescription.text),
+    authorName: preferredAuthorName,
     ragContext,
     styleProfile: mergeStyleProfileWithRagTechStack(baseStyleProfile, ragContext),
     maxRevisions: args.maxRevisions ?? defaultMaxRevisions
@@ -182,7 +194,7 @@ export async function runCreateProposal(
   return {
     finalProposal: state.proposalDraft,
     criticStatus,
-    critiquePoints: state.criticFeedback?.critique_points,
+    critiquePoints: state.criticFeedback?.critique_points ?? undefined,
     executionTrace: state.executionTrace,
     state
   };
@@ -274,9 +286,79 @@ export const getLatestGlobalStyleProfile = queryGeneric({
   }
 });
 
+export const getLatestPreferredAuthorName = queryGeneric({
+  args: {},
+  handler: async (ctx) => {
+    const styleProfiles = await ctx.db
+      .query("style_profiles")
+      .withIndex("by_created_at")
+      .order("desc")
+      .take(1);
+
+    const latestStyleProfile = styleProfiles[0];
+    if (!latestStyleProfile) {
+      return null;
+    }
+
+    const name = latestStyleProfile.memberName?.trim();
+    return name ? name : null;
+  }
+});
+
+export const getLatestStyleProfileByMemberId = queryGeneric({
+  args: {
+    memberId: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const styleProfiles = await ctx.db
+      .query("style_profiles")
+      .withIndex("by_member_id", (query) => query.eq("memberId", args.memberId))
+      .order("desc")
+      .take(1);
+
+    const latestStyleProfile = styleProfiles[0];
+    if (!latestStyleProfile) {
+      return null;
+    }
+
+    return {
+      tech_stack: [],
+      writing_style_analysis: {
+        formality: latestStyleProfile.writingStyleAnalysis.formality,
+        enthusiasm: latestStyleProfile.writingStyleAnalysis.enthusiasm,
+        key_vocabulary: latestStyleProfile.writingStyleAnalysis.keyVocabulary,
+        sentence_structure: latestStyleProfile.writingStyleAnalysis.sentenceStructure
+      },
+      project_constraints: []
+    } satisfies AnalyzerOutput;
+  }
+});
+
+export const getLatestPreferredAuthorNameByMemberId = queryGeneric({
+  args: {
+    memberId: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const styleProfiles = await ctx.db
+      .query("style_profiles")
+      .withIndex("by_member_id", (query) => query.eq("memberId", args.memberId))
+      .order("desc")
+      .take(1);
+
+    const latestStyleProfile = styleProfiles[0];
+    if (!latestStyleProfile) {
+      return null;
+    }
+
+    const name = latestStyleProfile.memberName?.trim();
+    return name ? name : null;
+  }
+});
+
 export const createProposal = actionGeneric({
   args: {
     newJobDescription: v.string(),
+    preferredMemberId: v.optional(v.float64()),
     maxRevisions: v.optional(v.number()),
     embeddingModel: v.optional(v.string()),
     chatModel: v.optional(v.string())
@@ -303,7 +385,7 @@ export const createProposal = actionGeneric({
           },
           getRawJob: async (rawJobId) => {
             return (ctx.runQuery as (query: unknown, args: unknown) => Promise<RetrievedRawJob | null>)(
-              getRawJobById,
+              anyApi.generate.getRawJobById,
               {
                 rawJobId: rawJobId as never
               }
@@ -311,7 +393,7 @@ export const createProposal = actionGeneric({
           },
           getProposalByRawJobId: async (rawJobId) => {
             return (ctx.runQuery as (query: unknown, args: unknown) => Promise<RetrievedProposal | null>)(
-              getLatestProposalByRawJobId,
+              anyApi.generate.getLatestProposalByRawJobId,
               {
                 rawJobId: rawJobId as never
               }
@@ -319,7 +401,7 @@ export const createProposal = actionGeneric({
           },
           getStyleProfileById: async (styleProfileId) => {
             return (ctx.runQuery as (query: unknown, args: unknown) => Promise<RetrievedStyleProfile | null>)(
-              getStyleProfileById,
+              anyApi.generate.getStyleProfileById,
               {
                 styleProfileId: styleProfileId as never
               }
@@ -327,10 +409,29 @@ export const createProposal = actionGeneric({
           }
         }),
       getGlobalStyleProfile: () =>
-        (ctx.runQuery as (query: unknown, args: unknown) => Promise<AnalyzerOutput | null>)(
-          getLatestGlobalStyleProfile,
-          {}
-        ),
+        args.preferredMemberId
+          ? (ctx.runQuery as (query: unknown, args: unknown) => Promise<AnalyzerOutput | null>)(
+              anyApi.generate.getLatestStyleProfileByMemberId,
+              {
+                memberId: args.preferredMemberId
+              }
+            )
+          : (ctx.runQuery as (query: unknown, args: unknown) => Promise<AnalyzerOutput | null>)(
+              anyApi.generate.getLatestGlobalStyleProfile,
+              {}
+            ),
+      getPreferredAuthorName: () =>
+        args.preferredMemberId
+          ? (ctx.runQuery as (query: unknown, args: unknown) => Promise<string | null>)(
+              anyApi.generate.getLatestPreferredAuthorNameByMemberId,
+              {
+                memberId: args.preferredMemberId
+              }
+            )
+          : (ctx.runQuery as (query: unknown, args: unknown) => Promise<string | null>)(
+              anyApi.generate.getLatestPreferredAuthorName,
+              {}
+            ),
       runGraph: (initialState) =>
         runProposalGraph(initialState, {
           writer: {

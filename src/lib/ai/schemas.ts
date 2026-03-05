@@ -6,7 +6,7 @@ export { analyzerOutputSchema };
 export const criticOutputSchema = z
   .object({
     status: z.enum(["APPROVED", "NEEDS_REVISION"]),
-    critique_points: z.array(z.string()).optional()
+    critique_points: z.array(z.string()).nullable()
   })
   .superRefine((value, context) => {
     if (value.status === "NEEDS_REVISION" && (!value.critique_points || value.critique_points.length === 0)) {

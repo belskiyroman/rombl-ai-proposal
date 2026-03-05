@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import { createOpenAIAgentRunners } from "../src/lib/ai/agents";
 import { runAnalyzerOnlyGraph } from "../src/lib/ai/graph";
 import { generateEmbedding } from "../src/lib/ai/embeddings";
+import { normalizeJobDescription } from "../src/lib/ai/job-description-normalizer";
 import { createInitialState, type RagContextItem } from "../src/lib/ai/state";
 import {
   ingestionInputSchema,
@@ -94,7 +95,7 @@ type RunMutationInvoker = (mutation: unknown, args: unknown) => Promise<string>;
 interface PairListProcessedProposal {
   _id: string;
   externalProposalId: number;
-  externalJobId: number;
+  externalJobId?: number;
   memberId: number;
   viewed: boolean;
   interview: boolean;
@@ -110,7 +111,7 @@ interface PairListProcessedProposal {
 
 interface PairListRawJob {
   _id: string;
-  externalJobId: number;
+  externalJobId?: number;
   title: string;
   clientLocation: string;
   clientReview: number;
@@ -181,13 +182,16 @@ export function buildPairsList({
       continue;
     }
 
+    const resolvedExternalJobId =
+      rawJob.externalJobId ?? proposal.externalJobId ?? proposal.externalProposalId;
+
     pairs.push({
       processedProposalId: String(proposal._id),
       rawJobId: String(rawJob._id),
       styleProfileId: String(styleProfile._id),
       createdAt: proposal.createdAt,
       job: {
-        externalJobId: rawJob.externalJobId,
+        externalJobId: resolvedExternalJobId,
         title: rawJob.title,
         clientLocation: rawJob.clientLocation,
         clientReview: rawJob.clientReview,
@@ -196,7 +200,7 @@ export function buildPairsList({
       },
       proposal: {
         externalProposalId: proposal.externalProposalId,
-        externalJobId: proposal.externalJobId,
+        externalJobId: proposal.externalJobId ?? resolvedExternalJobId,
         memberId: proposal.memberId,
         viewed: proposal.viewed,
         interview: proposal.interview,
@@ -306,14 +310,20 @@ export async function runIngestJobProposalPair(
     source: args.source ?? "manual"
   });
   const createdAt = (dependencies.now ?? Date.now)();
+  const normalizedJob = normalizeJobDescription(parsedInput.job.text);
+  if (normalizedJob.metadata.wasTruncated) {
+    console.warn(
+      `[jobs.ingestJobProposalPair] Truncated job description from ${normalizedJob.metadata.originalLength} to ${normalizedJob.metadata.finalLength} chars.`
+    );
+  }
 
   const [embedding, analyzerResult] = await Promise.all([
-    dependencies.embed(parsedInput.job.text),
+    dependencies.embed(normalizedJob.text),
     dependencies.runAnalyzerGraph({
-      newJobDescription: parsedInput.job.text,
+      newJobDescription: normalizedJob.text,
       ragContext: [
         {
-          jobText: parsedInput.job.text,
+          jobText: normalizedJob.text,
           proposalText: parsedInput.proposal.text,
           similarity: 1
         }
@@ -331,7 +341,7 @@ export async function runIngestJobProposalPair(
     projectType: parsedInput.job.type,
     skills: parsedInput.job.skills,
     title: parsedInput.job.title,
-    text: parsedInput.job.text,
+    text: normalizedJob.text,
     embedding,
     techStack: analyzerResult.tech_stack,
     projectConstraints: analyzerResult.project_constraints,
@@ -393,6 +403,7 @@ export const insertRawJobRecord = internalMutationGeneric({
   args: {
     document: v.object({
       source: sourceValidator,
+      externalJobId: v.optional(v.float64()),
       jobLink: v.optional(v.string()),
       clientLocation: v.string(),
       clientReview: v.float64(),
@@ -443,6 +454,7 @@ export const insertProcessedProposalRecord = internalMutationGeneric({
     document: v.object({
       source: sourceValidator,
       externalProposalId: v.float64(),
+      externalJobId: v.optional(v.float64()),
       memberId: v.float64(),
       viewed: v.boolean(),
       interview: v.boolean(),

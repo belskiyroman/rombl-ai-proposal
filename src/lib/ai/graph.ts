@@ -12,6 +12,7 @@ import type { ProposalGraphState } from "./state";
 
 export const ProposalStateAnnotation = Annotation.Root({
   newJobDescription: Annotation<string>,
+  authorName: Annotation<ProposalGraphState["authorName"]>,
   ragContext: Annotation<Array<{ jobText: string; proposalText: string; similarity?: number }>>,
   styleProfile: Annotation<ProposalGraphState["styleProfile"]>,
   proposalDraft: Annotation<string>,

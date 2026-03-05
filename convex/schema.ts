@@ -13,6 +13,7 @@ const writingStyleAnalysisValidator = v.object({
 export default defineSchema({
   raw_jobs: defineTable({
     source: sourceValidator,
+    externalJobId: v.optional(v.float64()),
     jobLink: v.optional(v.string()),
     clientLocation: v.string(),
     clientReview: v.float64(),
@@ -62,6 +63,7 @@ export default defineSchema({
   processed_proposals: defineTable({
     source: sourceValidator,
     externalProposalId: v.float64(),
+    externalJobId: v.optional(v.float64()),
     memberId: v.float64(),
     viewed: v.boolean(),
     interview: v.boolean(),
