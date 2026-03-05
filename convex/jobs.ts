@@ -29,7 +29,7 @@ const writingStyleAnalysisValidator = v.object({
 });
 
 const jobValidator = v.object({
-  id: v.float64(),
+  jobLink: v.optional(v.string()),
   clientLocation: v.string(),
   clientReview: v.float64(),
   clientReviewAmount: v.float64(),
@@ -42,7 +42,6 @@ const jobValidator = v.object({
 
 const proposalValidator = v.object({
   id: v.float64(),
-  jobId: v.float64(),
   viewed: v.boolean(),
   interview: v.boolean(),
   offer: v.boolean(),
@@ -324,7 +323,7 @@ export async function runIngestJobProposalPair(
 
   const rawJobDocument = rawJobDocumentSchema.parse({
     source: parsedInput.source,
-    externalJobId: parsedInput.job.id,
+    jobLink: parsedInput.job.jobLink,
     clientLocation: parsedInput.job.clientLocation,
     clientReview: parsedInput.job.clientReview,
     clientReviewAmount: parsedInput.job.clientReviewAmount,
@@ -367,7 +366,6 @@ export async function runIngestJobProposalPair(
   const processedProposalDocument = processedProposalDocumentSchema.parse({
     source: parsedInput.source,
     externalProposalId: parsedInput.proposal.id,
-    externalJobId: parsedInput.job.id,
     memberId: parsedInput.member.id,
     viewed: parsedInput.proposal.viewed,
     interview: parsedInput.proposal.interview,
@@ -395,7 +393,7 @@ export const insertRawJobRecord = internalMutationGeneric({
   args: {
     document: v.object({
       source: sourceValidator,
-      externalJobId: v.float64(),
+      jobLink: v.optional(v.string()),
       clientLocation: v.string(),
       clientReview: v.float64(),
       clientReviewAmount: v.float64(),
@@ -445,7 +443,6 @@ export const insertProcessedProposalRecord = internalMutationGeneric({
     document: v.object({
       source: sourceValidator,
       externalProposalId: v.float64(),
-      externalJobId: v.float64(),
       memberId: v.float64(),
       viewed: v.boolean(),
       interview: v.boolean(),
@@ -485,7 +482,7 @@ export const ingestJobProposalPair = actionGeneric({
       {
         source: args.source ?? "manual",
         job: {
-          id: args.job.id,
+          jobLink: args.job.jobLink,
           clientLocation: args.job.clientLocation,
           clientReview: args.job.clientReview,
           clientReviewAmount: args.job.clientReviewAmount,
@@ -497,7 +494,6 @@ export const ingestJobProposalPair = actionGeneric({
         },
         proposal: {
           id: args.proposal.id,
-          jobId: args.proposal.jobId,
           viewed: args.proposal.viewed,
           interview: args.proposal.interview,
           offer: args.proposal.offer,

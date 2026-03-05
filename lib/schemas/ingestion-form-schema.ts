@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 export const jobFormSchema = z.object({
-    id: z.coerce.number().int().positive({ message: "Job ID must be a positive integer" }),
+    jobLink: z.string().trim().optional(),
     clientLocation: z.string().trim().min(1, "Required"),
     clientReview: z.coerce.number().min(0).max(5, "Max 5"),
     clientReviewAmount: z.coerce.number().int().nonnegative(),
@@ -24,7 +24,6 @@ export const jobFormSchema = z.object({
 
 export const proposalFormSchema = z.object({
     id: z.coerce.number().int().positive({ message: "Proposal ID must be a positive integer" }),
-    jobId: z.coerce.number().int().positive({ message: "Job ID must be a positive integer" }),
     viewed: z.boolean(),
     interview: z.boolean(),
     offer: z.boolean(),

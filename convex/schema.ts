@@ -13,7 +13,7 @@ const writingStyleAnalysisValidator = v.object({
 export default defineSchema({
   raw_jobs: defineTable({
     source: sourceValidator,
-    externalJobId: v.float64(),
+    jobLink: v.optional(v.string()),
     clientLocation: v.string(),
     clientReview: v.float64(),
     clientReviewAmount: v.float64(),
@@ -29,7 +29,6 @@ export default defineSchema({
     createdAt: v.float64(),
     updatedAt: v.float64()
   })
-    .index("by_external_job_id", ["externalJobId"])
     .index("by_member_id", ["memberId"])
     .index("by_created_at", ["createdAt"])
     .searchIndex("search_text", {
@@ -63,7 +62,6 @@ export default defineSchema({
   processed_proposals: defineTable({
     source: sourceValidator,
     externalProposalId: v.float64(),
-    externalJobId: v.float64(),
     memberId: v.float64(),
     viewed: v.boolean(),
     interview: v.boolean(),

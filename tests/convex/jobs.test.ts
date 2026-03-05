@@ -6,7 +6,7 @@ import { buildPairsList, createIngestionMutationAdapters, runIngestJobProposalPa
 describe("runIngestJobProposalPair", () => {
   it("runs analyzer-only graph + embedding and stores phase-1 ingestion records", async () => {
     const sampleJob = {
-      id: 1,
+      jobLink: "https://www.upwork.com/freelance-jobs/apply/Full-Stack-Dev_~01/",
       clientLocation: "CAN",
       clientReview: 4.6,
       clientReviewAmount: 2,
@@ -19,7 +19,6 @@ describe("runIngestJobProposalPair", () => {
 
     const sampleProposal = {
       id: 1,
-      jobId: 1,
       viewed: true,
       interview: true,
       offer: true,
@@ -91,7 +90,7 @@ describe("runIngestJobProposalPair", () => {
 
     expect(insertRawJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        externalJobId: sampleJob.id,
+        jobLink: sampleJob.jobLink,
         clientLocation: sampleJob.clientLocation,
         clientTotalSpent: sampleJob.clientTotalSpent,
         embedding: [0.11, 0.22, 0.33],
@@ -121,7 +120,6 @@ describe("runIngestJobProposalPair", () => {
     expect(insertProcessedProposal).toHaveBeenCalledWith(
       expect.objectContaining({
         externalProposalId: sampleProposal.id,
-        externalJobId: sampleJob.id,
         memberId: sampleMember.id,
         price: "1000",
         priceAmount: 1000,
@@ -146,7 +144,7 @@ describe("createIngestionMutationAdapters", () => {
 
     const rawJobDoc = {
       source: "manual",
-      externalJobId: 1,
+      jobLink: "https://www.upwork.com/freelance-jobs/apply/Full-Stack-Dev_~01/",
       clientLocation: "CAN",
       clientReview: 4.6,
       clientReviewAmount: 2,
@@ -187,7 +185,6 @@ describe("createIngestionMutationAdapters", () => {
     const proposalDoc = {
       source: "manual",
       externalProposalId: 1,
-      externalJobId: 1,
       memberId: 20,
       viewed: true,
       interview: true,

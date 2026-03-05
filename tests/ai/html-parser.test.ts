@@ -64,64 +64,66 @@ const SAMPLE_HTML_HOURLY = `
 const EMPTY_HTML = `<html><head></head><body></body></html>`;
 
 describe("parseUpworkJobHtml", () => {
-    describe("title extraction", () => {
-        it("extracts title from data-test attribute", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.title).toBe("B2B Saas Sales - Lead Generation & Telemarketing");
-        });
-
-        it("extracts title from <title> tag removing Upwork suffix", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
-            expect(result.title).toBe("React Developer Needed");
-        });
-
-        it("returns empty string for empty HTML", () => {
-            const result = parseUpworkJobHtml(EMPTY_HTML);
-            expect(result.title).toBe("");
-        });
+  describe("title extraction", () => {
+    it("extracts title from data-test attribute", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.title).toBe(
+        "B2B Saas Sales - Lead Generation & Telemarketing",
+      );
     });
 
-    describe("description extraction", () => {
-        it("extracts description from data-test='Description'", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.text).toContain("B2B sales specialist");
-            expect(result.text).toContain("CRM management");
-        });
-
-        it("extracts description from class-based selector", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
-            expect(result.text).toContain("React dashboard");
-        });
-
-        it("returns empty string for empty HTML", () => {
-            const result = parseUpworkJobHtml(EMPTY_HTML);
-            expect(result.text).toBe("");
-        });
+    it("extracts title from <title> tag removing Upwork suffix", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
+      expect(result.title).toBe("React Developer Needed");
     });
 
-    describe("skills extraction", () => {
-        it("extracts skills from data-test='Skill' elements", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.skills).toContain("Lead Generation");
-            expect(result.skills).toContain("Cold Calling");
-            expect(result.skills).toContain("B2B Sales");
-            expect(result.skills.length).toBe(5);
-        });
+    it("returns empty string for empty HTML", () => {
+      const result = parseUpworkJobHtml(EMPTY_HTML);
+      expect(result.title).toBe("");
+    });
+  });
 
-        it("extracts skills from class-based selectors", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
-            expect(result.skills).toContain("React");
-            expect(result.skills).toContain("TypeScript");
-            expect(result.skills).toContain("Tailwind CSS");
-        });
+  describe("description extraction", () => {
+    it("extracts description from data-test='Description'", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.text).toContain("B2B sales specialist");
+      expect(result.text).toContain("CRM management");
+    });
 
-        it("returns empty array for empty HTML", () => {
-            const result = parseUpworkJobHtml(EMPTY_HTML);
-            expect(result.skills).toEqual([]);
-        });
+    it("extracts description from class-based selector", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
+      expect(result.text).toContain("React dashboard");
+    });
 
-        it("extracts individual skills from parent container (Upwork Air 3.0 pattern)", () => {
-            const html = `<html><body>
+    it("returns empty string for empty HTML", () => {
+      const result = parseUpworkJobHtml(EMPTY_HTML);
+      expect(result.text).toBe("");
+    });
+  });
+
+  describe("skills extraction", () => {
+    it("extracts skills from data-test='Skill' elements", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.skills).toContain("Lead Generation");
+      expect(result.skills).toContain("Cold Calling");
+      expect(result.skills).toContain("B2B Sales");
+      expect(result.skills.length).toBe(5);
+    });
+
+    it("extracts skills from class-based selectors", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
+      expect(result.skills).toContain("React");
+      expect(result.skills).toContain("TypeScript");
+      expect(result.skills).toContain("Tailwind CSS");
+    });
+
+    it("returns empty array for empty HTML", () => {
+      const result = parseUpworkJobHtml(EMPTY_HTML);
+      expect(result.skills).toEqual([]);
+    });
+
+    it("extracts individual skills from parent container (Upwork Air 3.0 pattern)", () => {
+      const html = `<html><body>
                 <div class="skills-list">
                     <h5>Skills and Expertise</h5>
                     <div class="air3-token-container">
@@ -132,86 +134,127 @@ describe("parseUpworkJobHtml", () => {
                     </div>
                 </div>
             </body></html>`;
-            const result = parseUpworkJobHtml(html);
-            expect(result.skills).toEqual(["B2B Marketing", "SaaS", "Product Demonstration", "Deal Closure"]);
-        });
+      const result = parseUpworkJobHtml(html);
+      expect(result.skills).toEqual([
+        "B2B Marketing",
+        "SaaS",
+        "Product Demonstration",
+        "Deal Closure",
+      ]);
+    });
 
-        it("extracts skills from parent element with class*='skill' without concatenating", () => {
-            const html = `<html><body>
+    it("extracts skills from parent element with class*='skill' without concatenating", () => {
+      const html = `<html><body>
                 <div class="up-skill-wrapper">
                     <a class="up-skill-badge">React</a>
                     <a class="up-skill-badge">Node.js</a>
                     <a class="up-skill-badge">GraphQL</a>
                 </div>
             </body></html>`;
-            const result = parseUpworkJobHtml(html);
-            expect(result.skills).toContain("React");
-            expect(result.skills).toContain("Node.js");
-            expect(result.skills).toContain("GraphQL");
-            expect(result.skills.length).toBe(3);
-        });
+      const result = parseUpworkJobHtml(html);
+      expect(result.skills).toContain("React");
+      expect(result.skills).toContain("Node.js");
+      expect(result.skills).toContain("GraphQL");
+      expect(result.skills.length).toBe(3);
+    });
+  });
+
+  describe("project type extraction", () => {
+    it("detects fixed-price project", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.type).toBe("fixedPrice");
     });
 
-    describe("project type extraction", () => {
-        it("detects fixed-price project", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.type).toBe("fixedPrice");
-        });
-
-        it("detects hourly project", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
-            expect(result.type).toBe("hourly");
-        });
-
-        it("defaults to fixedPrice for empty HTML", () => {
-            const result = parseUpworkJobHtml(EMPTY_HTML);
-            expect(result.type).toBe("fixedPrice");
-        });
+    it("detects hourly project", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
+      expect(result.type).toBe("hourly");
     });
 
-    describe("client info extraction", () => {
-        it("extracts and converts client location to country code", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.clientLocation).toBe("US");
-        });
+    it("defaults to fixedPrice for empty HTML", () => {
+      const result = parseUpworkJobHtml(EMPTY_HTML);
+      expect(result.type).toBe("fixedPrice");
+    });
+  });
 
-        it("extracts client rating", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.clientReview).toBe(4.8);
-        });
-
-        it("extracts review count", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.clientReviewAmount).toBe(23);
-        });
-
-        it("extracts total spent with K multiplier", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
-            expect(result.clientTotalSpent).toBe(50000);
-        });
-
-        it("extracts total spent as dollar amount", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
-            expect(result.clientTotalSpent).toBe(1234.56);
-        });
-
-        it("extracts Ukraine as UA", () => {
-            const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
-            expect(result.clientLocation).toBe("UA");
-        });
+  describe("client info extraction", () => {
+    it("extracts and converts client location to country code", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.clientLocation).toBe("US");
     });
 
-    describe("edge cases", () => {
-        it("handles garbage HTML without throwing", () => {
-            expect(() => parseUpworkJobHtml("not html at all")).not.toThrow();
-            const result = parseUpworkJobHtml("not html at all");
-            expect(result.title).toBe("");
-            expect(result.skills).toEqual([]);
-        });
-
-        it("handles HTML with only styles/scripts", () => {
-            const cssOnly = `<html><head><style>body{color:red}</style></head><body><script>var x=1;</script></body></html>`;
-            expect(() => parseUpworkJobHtml(cssOnly)).not.toThrow();
-        });
+    it("extracts client rating", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.clientReview).toBe(4.8);
     });
+
+    it("extracts review count", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.clientReviewAmount).toBe(23);
+    });
+
+    it("extracts total spent with K multiplier", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_FULL);
+      expect(result.clientTotalSpent).toBe(50000);
+    });
+
+    it("extracts total spent as dollar amount", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
+      expect(result.clientTotalSpent).toBe(1234.56);
+    });
+
+    it("extracts Ukraine as UA", () => {
+      const result = parseUpworkJobHtml(SAMPLE_HTML_HOURLY);
+      expect(result.clientLocation).toBe("UA");
+    });
+  });
+
+  describe("jobLink extraction", () => {
+    it("extracts jobLink from canonical link", () => {
+      const html = `<html><head>
+                <link rel="canonical" href="https://www.upwork.com/freelance-jobs/apply/Full-Stack-Engineer_~0123456789/">
+            </head><body></body></html>`;
+      const result = parseUpworkJobHtml(html);
+      expect(result.jobLink).toBe(
+        "https://www.upwork.com/freelance-jobs/apply/Full-Stack-Engineer_~0123456789/",
+      );
+    });
+
+    it("extracts jobLink from og:url meta tag when canonical is missing", () => {
+      const html = `<html><head>
+                <meta property="og:url" content="https://www.upwork.com/freelance-jobs/apply/React-Dev_~9876543210/">
+            </head><body></body></html>`;
+      const result = parseUpworkJobHtml(html);
+      expect(result.jobLink).toBe(
+        "https://www.upwork.com/freelance-jobs/apply/React-Dev_~9876543210/",
+      );
+    });
+
+    it("prefers canonical over og:url", () => {
+      const html = `<html><head>
+                <link rel="canonical" href="https://canonical.example.com/job">
+                <meta property="og:url" content="https://og.example.com/job">
+            </head><body></body></html>`;
+      const result = parseUpworkJobHtml(html);
+      expect(result.jobLink).toBe("https://canonical.example.com/job");
+    });
+
+    it("returns empty string for empty HTML", () => {
+      const result = parseUpworkJobHtml(EMPTY_HTML);
+      expect(result.jobLink).toBe("");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("handles garbage HTML without throwing", () => {
+      expect(() => parseUpworkJobHtml("not html at all")).not.toThrow();
+      const result = parseUpworkJobHtml("not html at all");
+      expect(result.title).toBe("");
+      expect(result.skills).toEqual([]);
+    });
+
+    it("handles HTML with only styles/scripts", () => {
+      const cssOnly = `<html><head><style>body{color:red}</style></head><body><script>var x=1;</script></body></html>`;
+      expect(() => parseUpworkJobHtml(cssOnly)).not.toThrow();
+    });
+  });
 });

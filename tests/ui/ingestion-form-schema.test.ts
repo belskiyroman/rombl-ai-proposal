@@ -11,7 +11,7 @@ import {
 
 function validJob() {
     return {
-        id: 12345,
+        jobLink: "https://www.upwork.com/freelance-jobs/apply/Build-a-dashboard_~012345/",
         clientLocation: "US",
         clientReview: 4.5,
         clientReviewAmount: 12,
@@ -26,7 +26,6 @@ function validJob() {
 function validProposal() {
     return {
         id: 67890,
-        jobId: 12345,
         viewed: true,
         interview: true,
         offer: false,
@@ -62,9 +61,18 @@ describe("jobFormSchema", () => {
         expect(result.success).toBe(false);
     });
 
-    it("rejects job with zero ID", () => {
-        const result = jobFormSchema.safeParse({ ...validJob(), id: 0 });
-        expect(result.success).toBe(false);
+    it("accepts job with jobLink URL", () => {
+        const result = jobFormSchema.safeParse(validJob());
+        expect(result.success).toBe(true);
+        if (result.success) {
+            expect(result.data.jobLink).toBe("https://www.upwork.com/freelance-jobs/apply/Build-a-dashboard_~012345/");
+        }
+    });
+
+    it("accepts job without jobLink", () => {
+        const { jobLink, ...noLink } = validJob();
+        const result = jobFormSchema.safeParse(noLink);
+        expect(result.success).toBe(true);
     });
 
     it("rejects job with empty skills array", () => {
@@ -80,14 +88,12 @@ describe("jobFormSchema", () => {
     it("coerces string numbers to numeric values", () => {
         const result = jobFormSchema.safeParse({
             ...validJob(),
-            id: "42",
             clientReview: "4.2",
             clientReviewAmount: "10",
             clientTotalSpent: "99999"
         });
         expect(result.success).toBe(true);
         if (result.success) {
-            expect(result.data.id).toBe(42);
             expect(result.data.clientReview).toBe(4.2);
         }
     });
