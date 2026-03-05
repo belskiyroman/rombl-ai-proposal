@@ -464,5 +464,19 @@ function countryToCode(raw: string): string {
     const cleaned = raw.toLowerCase().trim();
     // Already a code?
     if (/^[A-Z]{2,3}$/i.test(cleaned)) return cleaned.toUpperCase();
-    return COUNTRY_CODES[cleaned] ?? raw.slice(0, 3).toUpperCase();
+
+    // Exact match
+    if (COUNTRY_CODES[cleaned]) return COUNTRY_CODES[cleaned];
+
+    // Partial match: input may contain extra text (e.g. "United States\nIrvine4:59 AM")
+    // Check if the input starts with a known country name
+    for (const [country, code] of Object.entries(COUNTRY_CODES)) {
+        if (cleaned.startsWith(country)) return code;
+    }
+
+    // Last resort: take first 2 uppercase chars if they look like a code
+    const codeMatch = raw.match(/^([A-Za-z]{2,3})\b/);
+    if (codeMatch) return codeMatch[1].toUpperCase();
+
+    return raw.slice(0, 2).toUpperCase();
 }
