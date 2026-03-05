@@ -36,12 +36,12 @@ export const proposalFormSchema = z.object({
 
 export const memberFormSchema = z.object({
     id: z.coerce.number().int().positive({ message: "Member ID must be a positive integer" }),
-    name: z.string().trim().min(1, "Required"),
-    agency: z.boolean(),
+    name: z.string().trim().optional(),
+    agency: z.boolean().optional(),
     agencyName: z.string().trim().optional(),
     talentBadge: z.string().trim().optional(),
-    jss: z.coerce.number().min(0).max(100, "Max 100"),
-    location: z.string().trim().min(1, "Required")
+    jss: z.coerce.number().min(0).max(100, "Max 100").optional(),
+    location: z.string().trim().optional()
 });
 
 export const ingestionFormSchema = z.object({

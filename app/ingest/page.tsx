@@ -19,7 +19,7 @@ export default function IngestPage() {
         <main className="min-h-screen bg-gradient-to-b from-background to-muted/30">
             {/* Header */}
             <header className="border-b border-border/60 bg-card/80 backdrop-blur-sm sticky top-0 z-10">
-                <div className="mx-auto flex max-w-3xl items-center gap-4 px-6 py-4">
+                <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground text-sm font-bold shadow-sm">
                         R
                     </div>
@@ -35,7 +35,7 @@ export default function IngestPage() {
             </header>
 
             {/* Content */}
-            <div className="mx-auto max-w-3xl px-6 py-8 space-y-8 animate-fade-in">
+            <div className="mx-auto max-w-6xl px-6 py-8 space-y-8 animate-fade-in">
                 <IngestionForm onSuccess={setResults} />
 
                 {results && (

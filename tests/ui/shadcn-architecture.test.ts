@@ -49,6 +49,11 @@ describe("shadcn ui wrapper scaffolding", () => {
       expect(fileExists(file), `${file} should exist`).toBe(true);
     }
   });
+
+  it("marks button wrapper as a client component when using Radix Slot", () => {
+    const source = readFile("src/components/ui/button.tsx");
+    expect(source.startsWith('"use client";')).toBe(true);
+  });
 });
 
 describe("ingestion form refactor", () => {
@@ -62,6 +67,24 @@ describe("ingestion form refactor", () => {
     expect(source).toContain('from "@/src/hooks/use-toast"');
     expect(source).not.toContain("@radix-ui/react-");
     expect(source).not.toContain('from "sonner"');
+  });
+
+  it("renders member selector above job and proposal cards side-by-side", () => {
+    const source = readFile("src/components/IngestionForm.tsx");
+
+    expect(source).toContain("lg:grid-cols-2");
+    expect(source).toContain("selectMember");
+    expect(source).toContain("Member");
+    expect(source).toContain("listMembers");
+  });
+
+  it("allows member selection via buttons and new member dialog", () => {
+    const source = readFile("src/components/IngestionForm.tsx");
+
+    expect(source).toContain("selectMember(m.memberId)");
+    expect(source).toContain("newMemberOpen");
+    expect(source).toContain("DialogContent");
+    expect(source).toContain("saveNewMember");
   });
 });
 
