@@ -97,3 +97,14 @@ The agent interactions are orchestrated by **LangGraph.js**, which manages the s
 * `criticFeedback`: Critic's latest output.
 
 LangGraph.js will implement the logic of the iterative loop: *Writer -> Critic -> (if NEEDS_REVISION) -> Writer -> Critic -> ...* until APPROVED or a maximum iteration limit is reached.
+
+## 5. Frontend UI Architecture (shadcn/ui)
+
+The frontend must follow a strict `shadcn/ui` architecture.
+
+* **UI Wrapper Source of Truth:** All reusable primitives must live in `src/components/ui`.
+* **No Direct Radix in Feature Components:** Files like `src/components/IngestionForm.tsx` and `src/components/ExtractionResults.tsx` must never import `@radix-ui/react-*` directly.
+* **Form System:** Use the `Form` wrapper suite in `src/components/ui/form.tsx` (`Form`, `FormField`, `FormItem`, `FormLabel`, `FormControl`, `FormMessage`) with `react-hook-form` + `zodResolver`.
+* **Toast System:** Use shadcn `Toast` + `Toaster` + `use-toast` (`src/components/ui/toast.tsx`, `src/components/ui/toaster.tsx`, `src/hooks/use-toast.ts`).
+* **Class Composition:** Use `cn` from `src/lib/utils.ts` for dynamic and merged class names.
+* **Feature Composition:** Phase 1 UI should be composed from `src/components/IngestionForm.tsx` and `src/components/ExtractionResults.tsx` with card-based sectioning.

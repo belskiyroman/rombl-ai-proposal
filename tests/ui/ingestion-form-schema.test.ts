@@ -120,19 +120,29 @@ describe("memberFormSchema", () => {
         expect(result.success).toBe(true);
     });
 
+    it("accepts member with only ID (selection mode)", () => {
+        const result = memberFormSchema.safeParse({ id: 111 });
+        expect(result.success).toBe(true);
+    });
+
     it("accepts member without optional fields", () => {
-        const { agencyName, talentBadge, ...required } = validMember();
+        const { agencyName, talentBadge, name, location, jss, agency, ...required } = validMember();
         const result = memberFormSchema.safeParse(required);
         expect(result.success).toBe(true);
     });
 
-    it("rejects member with jss over 100", () => {
+    it("rejects member with jss over 100 when provided", () => {
         const result = memberFormSchema.safeParse({ ...validMember(), jss: 101 });
         expect(result.success).toBe(false);
     });
 
-    it("rejects member with empty name", () => {
+    it("accepts member with empty name in id-only mode", () => {
         const result = memberFormSchema.safeParse({ ...validMember(), name: "" });
+        expect(result.success).toBe(true);
+    });
+
+    it("rejects member with non-positive id", () => {
+        const result = memberFormSchema.safeParse({ id: 0 });
         expect(result.success).toBe(false);
     });
 });
