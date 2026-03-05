@@ -1,8 +1,19 @@
 import type { AnalyzerOutput, CriticOutput } from "./schemas";
 
 export interface RagContextItem {
+  rawJobId?: string;
+  proposalId?: string;
+  styleProfileId?: string;
+  jobTitle?: string;
   jobText: string;
   proposalText: string;
+  techStack?: string[];
+  styleProfile?: {
+    formality: number;
+    enthusiasm: number;
+    keyVocabulary: string[];
+    sentenceStructure: string;
+  };
   similarity?: number;
 }
 
