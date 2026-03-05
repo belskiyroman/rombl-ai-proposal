@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { internal } from "@/convex/_generated/api";
-import { createIngestionMutationAdapters, runIngestJobProposalPair } from "@/convex/jobs";
+import { buildPairsList, createIngestionMutationAdapters, runIngestJobProposalPair } from "@/convex/jobs";
 
 describe("runIngestJobProposalPair", () => {
   it("runs analyzer-only graph + embedding and stores phase-1 ingestion records", async () => {
@@ -215,5 +215,132 @@ describe("createIngestionMutationAdapters", () => {
     expect(runMutation).toHaveBeenNthCalledWith(3, internal.jobs.insertProcessedProposalRecord, {
       document: proposalDoc
     });
+  });
+});
+
+describe("buildPairsList", () => {
+  it("joins jobs, proposals, and style profiles sorted by createdAt desc", () => {
+    const result = buildPairsList({
+      processedProposals: [
+        {
+          _id: "proposal_older",
+          externalProposalId: 11,
+          rawJobId: "raw_1",
+          styleProfileId: "style_1",
+          externalJobId: 101,
+          memberId: 20,
+          viewed: true,
+          interview: false,
+          offer: false,
+          price: "900",
+          priceAmount: 900,
+          agency: true,
+          text: "Older proposal",
+          createdAt: 1_710_000_000_000
+        },
+        {
+          _id: "proposal_newer",
+          externalProposalId: 22,
+          rawJobId: "raw_2",
+          styleProfileId: "style_2",
+          externalJobId: 202,
+          memberId: 30,
+          viewed: true,
+          interview: true,
+          offer: true,
+          price: "1200",
+          priceAmount: 1200,
+          agency: false,
+          text: "Newer proposal",
+          createdAt: 1_720_000_000_000
+        }
+      ],
+      rawJobs: [
+        {
+          _id: "raw_1",
+          externalJobId: 101,
+          title: "Legacy dashboard updates",
+          clientLocation: "US",
+          clientReview: 4.2,
+          clientTotalSpent: 15000,
+          techStack: ["React", "Node.js"]
+        },
+        {
+          _id: "raw_2",
+          externalJobId: 202,
+          title: "AI workflow tooling",
+          clientLocation: "CAN",
+          clientReview: 4.9,
+          clientTotalSpent: 85000,
+          techStack: ["TypeScript", "Convex", "OpenAI"]
+        }
+      ],
+      styleProfiles: [
+        {
+          _id: "style_1",
+          memberId: 20,
+          memberName: "Roman Belskiy",
+          memberLocation: "UA",
+          jss: 100
+        },
+        {
+          _id: "style_2",
+          memberId: 30,
+          memberName: "Iryna K",
+          memberLocation: "PL",
+          jss: 98
+        }
+      ]
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      processedProposalId: "proposal_newer",
+      createdAt: 1_720_000_000_000,
+      job: {
+        title: "AI workflow tooling",
+        clientTotalSpent: 85000,
+        clientReview: 4.9,
+        techStack: ["TypeScript", "Convex", "OpenAI"]
+      },
+      proposal: {
+        externalProposalId: 22,
+        price: "1200",
+        priceAmount: 1200
+      },
+      styleProfile: {
+        memberName: "Iryna K",
+        memberLocation: "PL",
+        jss: 98
+      }
+    });
+    expect(result[1].processedProposalId).toBe("proposal_older");
+  });
+
+  it("skips proposals with missing joined records", () => {
+    const result = buildPairsList({
+      processedProposals: [
+        {
+          _id: "proposal_missing_links",
+          externalProposalId: 1,
+          rawJobId: "raw_missing",
+          styleProfileId: "style_missing",
+          externalJobId: 101,
+          memberId: 20,
+          viewed: true,
+          interview: false,
+          offer: false,
+          price: "500",
+          priceAmount: 500,
+          agency: false,
+          text: "Test",
+          createdAt: 1_710_000_000_000
+        }
+      ],
+      rawJobs: [],
+      styleProfiles: []
+    });
+
+    expect(result).toEqual([]);
   });
 });

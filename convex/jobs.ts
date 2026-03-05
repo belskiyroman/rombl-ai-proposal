@@ -1,4 +1,4 @@
-import { actionGeneric, internalMutationGeneric } from "convex/server";
+import { actionGeneric, internalMutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
@@ -92,6 +92,133 @@ export interface IngestJobProposalPairDependencies {
 
 type RunMutationInvoker = (mutation: unknown, args: unknown) => Promise<string>;
 
+interface PairListProcessedProposal {
+  _id: string;
+  externalProposalId: number;
+  externalJobId: number;
+  memberId: number;
+  viewed: boolean;
+  interview: boolean;
+  offer: boolean;
+  price: string;
+  priceAmount: number;
+  agency: boolean;
+  text?: string;
+  rawJobId: string;
+  styleProfileId: string;
+  createdAt: number;
+}
+
+interface PairListRawJob {
+  _id: string;
+  externalJobId: number;
+  title: string;
+  clientLocation: string;
+  clientReview: number;
+  clientTotalSpent: number;
+  techStack: string[];
+}
+
+interface PairListStyleProfile {
+  _id: string;
+  memberId: number;
+  memberName: string;
+  memberLocation: string;
+  jss: number;
+  talentBadge?: string;
+}
+
+export interface PairListItem {
+  processedProposalId: string;
+  rawJobId: string;
+  styleProfileId: string;
+  createdAt: number;
+  job: {
+    externalJobId: number;
+    title: string;
+    clientLocation: string;
+    clientReview: number;
+    clientTotalSpent: number;
+    techStack: string[];
+  };
+  proposal: {
+    externalProposalId: number;
+    externalJobId: number;
+    memberId: number;
+    viewed: boolean;
+    interview: boolean;
+    offer: boolean;
+    agency: boolean;
+    price: string;
+    priceAmount: number;
+  };
+  styleProfile: {
+    memberId: number;
+    memberName: string;
+    memberLocation: string;
+    jss: number;
+    talentBadge?: string;
+  };
+}
+
+export function buildPairsList({
+  processedProposals,
+  rawJobs,
+  styleProfiles
+}: {
+  processedProposals: PairListProcessedProposal[];
+  rawJobs: PairListRawJob[];
+  styleProfiles: PairListStyleProfile[];
+}): PairListItem[] {
+  const rawJobsById = new Map(rawJobs.map((job) => [String(job._id), job]));
+  const styleProfilesById = new Map(styleProfiles.map((profile) => [String(profile._id), profile]));
+  const pairs: PairListItem[] = [];
+
+  for (const proposal of processedProposals) {
+    const rawJob = rawJobsById.get(String(proposal.rawJobId));
+    const styleProfile = styleProfilesById.get(String(proposal.styleProfileId));
+
+    if (!rawJob || !styleProfile) {
+      continue;
+    }
+
+    pairs.push({
+      processedProposalId: String(proposal._id),
+      rawJobId: String(rawJob._id),
+      styleProfileId: String(styleProfile._id),
+      createdAt: proposal.createdAt,
+      job: {
+        externalJobId: rawJob.externalJobId,
+        title: rawJob.title,
+        clientLocation: rawJob.clientLocation,
+        clientReview: rawJob.clientReview,
+        clientTotalSpent: rawJob.clientTotalSpent,
+        techStack: rawJob.techStack
+      },
+      proposal: {
+        externalProposalId: proposal.externalProposalId,
+        externalJobId: proposal.externalJobId,
+        memberId: proposal.memberId,
+        viewed: proposal.viewed,
+        interview: proposal.interview,
+        offer: proposal.offer,
+        agency: proposal.agency,
+        price: proposal.price,
+        priceAmount: proposal.priceAmount
+      },
+      styleProfile: {
+        memberId: styleProfile.memberId,
+        memberName: styleProfile.memberName,
+        memberLocation: styleProfile.memberLocation,
+        jss: styleProfile.jss,
+        talentBadge: styleProfile.talentBadge
+      }
+    });
+  }
+
+  return pairs.sort((left, right) => right.createdAt - left.createdAt);
+}
+
 export function createIngestionMutationAdapters(runMutation: RunMutationInvoker): Pick<
   IngestJobProposalPairDependencies,
   "insertRawJob" | "insertStyleProfile" | "insertProcessedProposal"
@@ -105,6 +232,71 @@ export function createIngestionMutationAdapters(runMutation: RunMutationInvoker)
       })
   };
 }
+
+export const getPairs = queryGeneric({
+  args: {
+    limit: v.optional(v.number())
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
+    const processedProposals = await ctx.db
+      .query("processed_proposals")
+      .withIndex("by_created_at")
+      .order("desc")
+      .take(limit);
+
+    if (processedProposals.length === 0) {
+      return [];
+    }
+
+    const rawJobIds = [...new Set(processedProposals.map((proposal) => proposal.rawJobId))];
+    const styleProfileIds = [...new Set(processedProposals.map((proposal) => proposal.styleProfileId))];
+
+    const [rawJobs, styleProfiles] = await Promise.all([
+      Promise.all(rawJobIds.map((id) => ctx.db.get(id))),
+      Promise.all(styleProfileIds.map((id) => ctx.db.get(id)))
+    ]);
+
+    return buildPairsList({
+      processedProposals: processedProposals.map((proposal) => ({
+        _id: String(proposal._id),
+        externalProposalId: proposal.externalProposalId,
+        externalJobId: proposal.externalJobId,
+        memberId: proposal.memberId,
+        viewed: proposal.viewed,
+        interview: proposal.interview,
+        offer: proposal.offer,
+        price: proposal.price,
+        priceAmount: proposal.priceAmount,
+        agency: proposal.agency,
+        rawJobId: String(proposal.rawJobId),
+        styleProfileId: String(proposal.styleProfileId),
+        createdAt: proposal.createdAt
+      })),
+      rawJobs: rawJobs
+        .filter((job): job is NonNullable<typeof job> => job !== null)
+        .map((job) => ({
+          _id: String(job._id),
+          externalJobId: job.externalJobId,
+          title: job.title,
+          clientLocation: job.clientLocation,
+          clientReview: job.clientReview,
+          clientTotalSpent: job.clientTotalSpent,
+          techStack: job.techStack
+        })),
+      styleProfiles: styleProfiles
+        .filter((profile): profile is NonNullable<typeof profile> => profile !== null)
+        .map((profile) => ({
+          _id: String(profile._id),
+          memberId: profile.memberId,
+          memberName: profile.memberName,
+          memberLocation: profile.memberLocation,
+          jss: profile.jss,
+          talentBadge: profile.talentBadge
+        }))
+    });
+  }
+});
 
 export async function runIngestJobProposalPair(
   args: IngestJobProposalPairArgs,
