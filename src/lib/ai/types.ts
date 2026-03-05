@@ -3,7 +3,7 @@ import { z } from "zod";
 export const ingestionSourceSchema = z.enum(["manual", "chrome_extension"]);
 
 export const jobSchema = z.object({
-  id: z.number().int().positive(),
+  jobLink: z.string().trim().optional(),
   clientLocation: z.string().trim().regex(/^[A-Z]{2,3}$/),
   clientReview: z.number().min(0).max(5),
   clientReviewAmount: z.number().int().nonnegative(),
@@ -18,7 +18,6 @@ const proposalPriceSchema = z.string().trim().regex(/^\d+(\.\d+)?$/);
 
 export const proposalSchema = z.object({
   id: z.number().int().positive(),
-  jobId: z.number().int().positive(),
   viewed: z.boolean(),
   interview: z.boolean(),
   offer: z.boolean(),
@@ -60,7 +59,7 @@ export const ingestionInputSchema = z.object({
 
 export const rawJobDocumentSchema = z.object({
   source: ingestionSourceSchema,
-  externalJobId: z.number().int().positive(),
+  jobLink: z.string().trim().optional(),
   clientLocation: z.string().trim().regex(/^[A-Z]{2,3}$/),
   clientReview: z.number().min(0).max(5),
   clientReviewAmount: z.number().int().nonnegative(),
@@ -101,7 +100,6 @@ export const styleProfileDocumentSchema = z.object({
 export const processedProposalDocumentSchema = z.object({
   source: ingestionSourceSchema,
   externalProposalId: z.number().int().positive(),
-  externalJobId: z.number().int().positive(),
   memberId: z.number().int().positive(),
   viewed: z.boolean(),
   interview: z.boolean(),

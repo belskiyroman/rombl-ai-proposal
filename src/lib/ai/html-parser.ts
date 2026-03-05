@@ -14,6 +14,7 @@ export interface ParsedJobData {
     clientReview: number;
     clientReviewAmount: number;
     clientTotalSpent: number;
+    jobLink: string;
 }
 
 /**
@@ -35,6 +36,7 @@ export function parseUpworkJobHtml(html: string): ParsedJobData {
         clientReview: extractClientReview(doc),
         clientReviewAmount: extractClientReviewAmount(doc),
         clientTotalSpent: extractClientTotalSpent(doc),
+        jobLink: extractJobLink(doc),
     };
 }
 
@@ -327,6 +329,22 @@ function extractClientTotalSpent(doc: Document): number {
     }
 
     return 0;
+}
+
+function extractJobLink(doc: Document): string {
+    // Strategy 1: <link rel="canonical">
+    const canonical = doc.querySelector('link[rel="canonical"]');
+    if (canonical?.getAttribute("href")?.trim()) {
+        return canonical.getAttribute("href")!.trim();
+    }
+
+    // Strategy 2: <meta property="og:url">
+    const ogUrl = doc.querySelector('meta[property="og:url"]');
+    if (ogUrl?.getAttribute("content")?.trim()) {
+        return ogUrl.getAttribute("content")!.trim();
+    }
+
+    return "";
 }
 
 // ---------- Helpers ----------

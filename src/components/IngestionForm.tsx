@@ -40,7 +40,7 @@ interface IngestionFormProps {
 
 const defaultValues: IngestionFormValues = {
   job: {
-    id: 0,
+    jobLink: "",
     clientLocation: "",
     clientReview: 0,
     clientReviewAmount: 0,
@@ -52,7 +52,6 @@ const defaultValues: IngestionFormValues = {
   },
   proposal: {
     id: 0,
-    jobId: 0,
     viewed: false,
     interview: false,
     offer: false,
@@ -282,6 +281,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         ...current,
         job: {
           ...current.job,
+          jobLink: parsed.jobLink || current.job.jobLink,
           title: parsed.title || current.job.title,
           text: parsed.text || current.job.text,
           skills: parsed.skills.length > 0 ? parsed.skills : current.job.skills,
@@ -300,7 +300,8 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         parsed.text && "description",
         parsed.skills.length > 0 && `${parsed.skills.length} skills`,
         parsed.clientLocation && "location",
-        parsed.clientTotalSpent > 0 && "total spent"
+        parsed.clientTotalSpent > 0 && "total spent",
+        parsed.jobLink && "job link"
       ].filter(Boolean);
 
       toast({
@@ -568,12 +569,12 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <FormField
                         control={form.control}
-                        name="job.id"
+                        name="job.jobLink"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Job ID</FormLabel>
+                            <FormLabel>Job Link</FormLabel>
                             <FormControl>
-                              <Input {...field} type="number" />
+                              <Input {...field} placeholder="https://www.upwork.com/freelance-jobs/apply/..." />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -749,19 +750,6 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Proposal ID</FormLabel>
-                            <FormControl>
-                              <Input {...field} type="number" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="proposal.jobId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Job ID (ref)</FormLabel>
                             <FormControl>
                               <Input {...field} type="number" />
                             </FormControl>
