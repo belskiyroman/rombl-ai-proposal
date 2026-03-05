@@ -59,6 +59,7 @@ export const ingestionInputSchema = z.object({
 
 export const rawJobDocumentSchema = z.object({
   source: ingestionSourceSchema,
+  externalJobId: z.number().int().positive().optional(),
   jobLink: z.string().trim().optional(),
   clientLocation: z.string().trim().regex(/^[A-Z]{2,3}$/),
   clientReview: z.number().min(0).max(5),
@@ -100,6 +101,7 @@ export const styleProfileDocumentSchema = z.object({
 export const processedProposalDocumentSchema = z.object({
   source: ingestionSourceSchema,
   externalProposalId: z.number().int().positive(),
+  externalJobId: z.number().int().positive().optional(),
   memberId: z.number().int().positive(),
   viewed: z.boolean(),
   interview: z.boolean(),

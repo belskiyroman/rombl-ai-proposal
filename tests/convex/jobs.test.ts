@@ -135,6 +135,92 @@ describe("runIngestJobProposalPair", () => {
       executionTrace: ["analyzer"]
     });
   });
+
+  it("normalizes html job text before embedding, analyzer graph input, and persistence", async () => {
+    const htmlJobText = `
+      <html>
+        <head>
+          <title>Full-Stack React + Node Project</title>
+          <script>window.shouldNotLeak = "SECRET_DATA";</script>
+        </head>
+        <body>
+          <div data-test="Description">
+            <p>Need React and Node.js engineer for API integrations.</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const embed = vi.fn().mockResolvedValue([0.77, 0.88, 0.99]);
+    const runAnalyzerGraph = vi.fn().mockResolvedValue({
+      tech_stack: ["React", "Node.js"],
+      writing_style_analysis: {
+        formality: 6,
+        enthusiasm: 7,
+        key_vocabulary: ["delivery", "scope"],
+        sentence_structure: "short"
+      },
+      project_constraints: ["integrations"],
+      executionTrace: ["analyzer"]
+    });
+    const insertRawJob = vi.fn().mockResolvedValue("raw_job_2");
+    const insertStyleProfile = vi.fn().mockResolvedValue("style_profile_2");
+    const insertProcessedProposal = vi.fn().mockResolvedValue("processed_proposal_2");
+
+    await runIngestJobProposalPair(
+      {
+        source: "manual",
+        job: {
+          jobLink: "https://www.upwork.com/freelance-jobs/apply/Example_~02/",
+          clientLocation: "US",
+          clientReview: 4.7,
+          clientReviewAmount: 10,
+          clientTotalSpent: 25000,
+          type: "fixedPrice",
+          skills: ["React"],
+          title: "Raw HTML job",
+          text: htmlJobText
+        },
+        proposal: {
+          id: 2,
+          viewed: true,
+          interview: false,
+          offer: false,
+          price: "500",
+          agency: false,
+          memberId: 21,
+          text: "I can help with this build."
+        },
+        member: {
+          id: 21,
+          name: "Jane Engineer",
+          agency: false,
+          jss: 95,
+          location: "UA"
+        }
+      },
+      {
+        embed,
+        runAnalyzerGraph,
+        insertRawJob,
+        insertStyleProfile,
+        insertProcessedProposal
+      }
+    );
+
+    const embeddedInput = embed.mock.calls[0]?.[0];
+    expect(embeddedInput).toContain("Full-Stack React + Node Project");
+    expect(embeddedInput).toContain("Need React and Node.js engineer");
+    expect(embeddedInput).not.toContain("<html");
+    expect(embeddedInput).not.toContain("SECRET_DATA");
+
+    const graphInput = runAnalyzerGraph.mock.calls[0]?.[0];
+    expect(graphInput.newJobDescription).toBe(embeddedInput);
+    expect(graphInput.ragContext[0]?.jobText).toBe(embeddedInput);
+
+    const insertedRawJobDoc = insertRawJob.mock.calls[0]?.[0];
+    expect(insertedRawJobDoc.text).toBe(embeddedInput);
+  });
 });
 
 describe("createIngestionMutationAdapters", () => {

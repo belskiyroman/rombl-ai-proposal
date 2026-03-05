@@ -19,6 +19,7 @@ export interface RagContextItem {
 
 export interface ProposalGraphState {
   newJobDescription: string;
+  authorName?: string | null;
   ragContext: RagContextItem[];
   styleProfile: AnalyzerOutput | null;
   proposalDraft: string;
@@ -33,6 +34,7 @@ export const defaultMaxRevisions = 2;
 export function createInitialState(newJobDescription: string): ProposalGraphState {
   return {
     newJobDescription,
+    authorName: null,
     ragContext: [],
     styleProfile: null,
     proposalDraft: "",

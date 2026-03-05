@@ -93,15 +93,16 @@ describe("runCreateProposal", () => {
       expect(initialState.ragContext).toHaveLength(1);
       expect(initialState.styleProfile?.tech_stack).toEqual(["TypeScript", "LangGraph"]);
 
-      return {
-        ...initialState,
-        proposalDraft: "Final proposal body",
-        criticFeedback: {
-          status: "APPROVED"
-        },
-        revisionCount: 1,
-        executionTrace: ["writer", "critic", "writer", "critic"]
-      };
+        return {
+          ...initialState,
+          proposalDraft: "Final proposal body",
+          criticFeedback: {
+          status: "APPROVED",
+          critique_points: null
+          },
+          revisionCount: 1,
+          executionTrace: ["writer", "critic", "writer", "critic"]
+        };
     });
 
     const result = await runCreateProposal(
@@ -135,5 +136,89 @@ describe("runCreateProposal", () => {
         }
       )
     ).rejects.toThrow("No style profile found for proposal generation.");
+  });
+
+  it("normalizes html before retrieval embedding and graph state", async () => {
+    const embed = vi.fn().mockResolvedValue([0.44, 0.55, 0.66]);
+    const vectorSearch = vi.fn().mockResolvedValue([{ _id: "raw_1", _score: 0.91 }]);
+    const getRawJob = vi.fn().mockResolvedValue({
+      _id: "raw_1",
+      text: "Need React + Convex engineer",
+      title: "React engineer",
+      techStack: ["React", "Convex"]
+    });
+    const getProposalByRawJobId = vi.fn().mockResolvedValue({
+      _id: "proposal_1",
+      text: "I can ship this quickly with clean architecture.",
+      styleProfileId: "style_1"
+    });
+    const getStyleProfileById = vi.fn().mockResolvedValue({
+      _id: "style_1",
+      writingStyleAnalysis: {
+        formality: 7,
+        enthusiasm: 6,
+        keyVocabulary: ["timeline", "delivery"],
+        sentenceStructure: "concise"
+      }
+    });
+
+    const runGraph = vi.fn(async (initialState) => ({
+      ...initialState,
+      proposalDraft: "Final proposal body",
+      criticFeedback: { status: "APPROVED" as const, critique_points: null },
+      executionTrace: ["writer", "critic"]
+    }));
+
+    const htmlInput = `
+      <html>
+        <head>
+          <title>React + Convex Platform Build</title>
+          <script>window.bigPayload = "${"x".repeat(2000)}";</script>
+        </head>
+        <body>
+          <div data-test="Description">
+            <p>Need React + Convex engineer to ship an MVP dashboard.</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    await runCreateProposal(
+      {
+        newJobDescription: htmlInput,
+        maxRevisions: 2
+      },
+      {
+        retrieveRagContext: (args) =>
+          runRetrieveRagContext(args, {
+            embed,
+            vectorSearch,
+            getRawJob,
+            getProposalByRawJobId,
+            getStyleProfileById
+          }),
+        getGlobalStyleProfile: vi.fn().mockResolvedValue({
+          tech_stack: [],
+          writing_style_analysis: {
+            formality: 7,
+            enthusiasm: 6,
+            key_vocabulary: ["timeline", "delivery"],
+            sentence_structure: "concise"
+          },
+          project_constraints: []
+        }),
+        runGraph
+      }
+    );
+
+    const embeddedInput = embed.mock.calls[0]?.[0];
+    expect(embeddedInput).toContain("React + Convex Platform Build");
+    expect(embeddedInput).toContain("Need React + Convex engineer");
+    expect(embeddedInput).not.toContain("<html");
+    expect(embeddedInput).not.toContain("window.bigPayload");
+
+    const graphInput = runGraph.mock.calls[0]?.[0];
+    expect(graphInput.newJobDescription).toBe(embeddedInput);
+    expect(graphInput.newJobDescription).not.toContain("<");
   });
 });

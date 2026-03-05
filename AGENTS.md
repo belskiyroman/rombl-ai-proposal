@@ -61,6 +61,7 @@ The system operates in two distinct phases:
     1.  Cleaned text of the new job description.
     2.  RAG Context: 3-4 examples of *similar* past proposal texts.
     3.  Style Profile from Agent-Analyzer.
+    4.  Author identity constraint (`authorName`) from selected profile (or latest profile when auto mode is used).
 * **Output Data:** Clean Markdown or Plain Text (optimized for web text fields).
 * **Tools:** None.
 
@@ -81,7 +82,7 @@ The system operates in two distinct phases:
     ```typescript
     z.object({
       status: z.enum(["APPROVED", "NEEDS_REVISION"]),
-      critique_points: z.array(z.string()).optional() // Present only if NEEDS_REVISION
+      critique_points: z.array(z.string()).nullable() // null when APPROVED
     })
     ```
 * **Tools:** None.
@@ -91,6 +92,7 @@ The system operates in two distinct phases:
 The agent interactions are orchestrated by **LangGraph.js**, which manages the system State within a Convex Action. The State includes:
 
 * `newJobDescription`: Cleaned input text.
+* `authorName`: Preferred signer/identity derived from selected member profile.
 * `ragContext`: Retrieved past proposal pairs.
 * `styleProfile`: Analyzer's output.
 * `proposalDraft`: Writer's latest output.
@@ -108,3 +110,51 @@ The frontend must follow a strict `shadcn/ui` architecture.
 * **Toast System:** Use shadcn `Toast` + `Toaster` + `use-toast` (`src/components/ui/toast.tsx`, `src/components/ui/toaster.tsx`, `src/hooks/use-toast.ts`).
 * **Class Composition:** Use `cn` from `src/lib/utils.ts` for dynamic and merged class names.
 * **Feature Composition:** Phase 1 UI should be composed from `src/components/IngestionForm.tsx` and `src/components/ExtractionResults.tsx` with card-based sectioning.
+* **Generation Member Selector:** `src/components/GenerationForm.tsx` must use `api.members.listMembers` and allow choosing a profile (`Auto (Latest)` or explicit member) before proposal generation.
+
+## 6. Recent Functional Changes (Mar 2026)
+
+### 6.1 Input Normalization Safety Layer
+
+Generation and embedding paths now normalize job descriptions before AI calls:
+
+* Detect likely HTML payloads.
+* Reuse Upwork parser when available.
+* Fallback to server-safe HTML stripping (scripts/styles/templates/svg/canvas removed).
+* Decode common HTML entities and normalize whitespace.
+* Apply hard truncation to prevent token overflow (`MAX_JOB_DESCRIPTION_CHARS = 12000`).
+
+This is implemented via shared utility:
+* `src/lib/ai/job-description-normalizer.ts`
+
+Applied in:
+* `convex/generate.ts` (`createProposal`)
+* `convex/jobs.ts` (`ingestJobProposalPair`)
+* `convex/embeddings.ts` (`generateJobEmbedding`)
+
+### 6.2 Profile-Scoped Generation
+
+`createProposal` now supports explicit member targeting:
+
+* New optional action arg: `preferredMemberId`.
+* If set, generation loads latest style profile and author name for that `memberId`.
+* If not set, generation falls back to latest global style profile/name.
+
+Supporting queries in `convex/generate.ts`:
+* `getLatestStyleProfileByMemberId`
+* `getLatestPreferredAuthorNameByMemberId`
+
+### 6.3 Author Identity Guardrail
+
+Writer and Critic prompts now enforce author identity consistency:
+
+* Writer prompt includes strict name constraint using `authorName`.
+* Critic prompt validates name usage against the same constraint.
+* If `authorName` is unavailable, prompts explicitly disallow inventing personal names.
+
+Purpose:
+* Prevent hallucinated sign-offs such as using a wrong first name.
+
+### 6.4 Convex Function Reference Compliance
+
+Internal action/query calls in `convex/generate.ts` use Convex function references (`anyApi.generate.*`) with `ctx.runQuery`, avoiding direct local-function invocation inside Convex actions.

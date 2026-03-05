@@ -6,6 +6,7 @@ import type { ProposalGraphState } from "@/src/lib/ai/state";
 
 const baseState: ProposalGraphState = {
   newJobDescription: "Need an AI proposal generator for freelance jobs",
+  authorName: "Roman Belskiy",
   ragContext: [
     {
       jobText: "Build SaaS proposal automation",
@@ -43,6 +44,8 @@ describe("writerNode", () => {
     expect(prompt).toContain(baseState.ragContext[0].jobText);
     expect(prompt).toContain(baseState.ragContext[0].proposalText);
     expect(prompt).toContain("ROI");
+    expect(prompt).toContain("Author Identity Constraint");
+    expect(prompt).toContain("Roman Belskiy");
     expect(nextState.proposalDraft).toBe("## Proposal\n\nI can deliver this in milestones.");
     expect(nextState.executionTrace).toEqual(["writer"]);
   });

@@ -57,10 +57,20 @@ export function buildWriterPrompt(state: ProposalGraphState): string {
       ? `Revision Feedback:\n${(state.criticFeedback.critique_points || []).join("\n")}\n\n`
       : "";
 
+  const authorIdentityBlock = state.authorName?.trim()
+    ? `Author Identity Constraint:
+Use "${state.authorName}" as the only personal name when self-identifying or signing off.
+Do not introduce any other first name or full name.`
+    : `Author Identity Constraint:
+Do not invent a personal name.
+If a sign-off is needed, use a neutral sign-off without a name.`;
+
   return `${writerSystemPrompt}
 
 New Job Description:
 ${state.newJobDescription}
+
+${authorIdentityBlock}
 
 Style Profile:
 ${styleBlock}
@@ -72,11 +82,15 @@ ${revisionBlock}Write only the final proposal in clean markdown.`;
 }
 
 export function buildCriticPrompt(state: ProposalGraphState): string {
+  const authorIdentityBlock = state.authorName?.trim()
+    ? `Author Identity Constraint:\nThe proposal must use "${state.authorName}" as the only personal name if a name is present.`
+    : "Author Identity Constraint:\nNo personal name should be invented when unknown.";
+
   return `${criticSystemPrompt}\n\nJob Description:\n${state.newJobDescription}\n\nStyle Profile:\n${JSON.stringify(
     state.styleProfile,
     null,
     2
-  )}\n\nDraft Proposal:\n${state.proposalDraft}`;
+  )}\n\n${authorIdentityBlock}\n\nDraft Proposal:\n${state.proposalDraft}`;
 }
 
 export async function runAnalyzerAgent(state: ProposalGraphState, llm: LlmInvoker): Promise<AnalyzerOutput> {
