@@ -18,6 +18,8 @@ export interface CreateProposalArgs {
   preferredMemberId?: number;
   maxRevisions?: number;
   embeddingModel?: string;
+  fastModel?: string;
+  reasoningModel?: string;
   chatModel?: string;
 }
 
@@ -361,10 +363,15 @@ export const createProposal = actionGeneric({
     preferredMemberId: v.optional(v.float64()),
     maxRevisions: v.optional(v.number()),
     embeddingModel: v.optional(v.string()),
+    fastModel: v.optional(v.string()),
+    reasoningModel: v.optional(v.string()),
     chatModel: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const runners = createOpenAIAgentRunners(args.chatModel);
+    const runners = createOpenAIAgentRunners({
+      fastModel: args.fastModel ?? args.chatModel,
+      reasoningModel: args.reasoningModel ?? args.chatModel
+    });
 
     return runCreateProposal(args, {
       retrieveRagContext: (retrieveArgs) =>

@@ -1,27 +1,99 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveOpenAIModel } from "@/src/lib/ai/agents";
+import { createOpenAIAgentRunners } from "@/src/lib/ai/agents";
+import { analyzerOutputSchema, criticOutputSchema } from "@/src/lib/ai/schemas";
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+const getLLM = vi.hoisted(() => vi.fn());
+const fastStructuredInvoke = vi.hoisted(() => vi.fn());
+const criticStructuredInvoke = vi.hoisted(() => vi.fn());
+const reasoningInvoke = vi.hoisted(() => vi.fn());
+const fastWithStructuredOutput = vi.hoisted(() => vi.fn());
 
-describe("resolveOpenAIModel", () => {
-  it("uses explicitly provided model when passed", () => {
-    vi.stubEnv("OPENAI_MODEL", "gpt-5-mini");
+vi.mock("@/src/lib/ai/models", () => ({
+  getLLM
+}));
 
-    expect(resolveOpenAIModel("gpt-4.1-mini")).toBe("gpt-4.1-mini");
+describe("createOpenAIAgentRunners", () => {
+  beforeEach(() => {
+    getLLM.mockReset();
+    fastStructuredInvoke.mockReset();
+    criticStructuredInvoke.mockReset();
+    reasoningInvoke.mockReset();
+    fastWithStructuredOutput.mockReset();
   });
 
-  it("uses OPENAI_MODEL when explicit model is not provided", () => {
-    vi.stubEnv("OPENAI_MODEL", "gpt-5-mini");
+  it("uses fast model for analyzer/critic and reasoning model for writer", async () => {
+    fastStructuredInvoke.mockResolvedValue({
+      tech_stack: ["React"],
+      writing_style_analysis: {
+        formality: 7,
+        enthusiasm: 6,
+        key_vocabulary: ["ROI"],
+        sentence_structure: "concise"
+      },
+      project_constraints: ["budget"]
+    });
+    criticStructuredInvoke.mockResolvedValue({
+      status: "NEEDS_REVISION",
+      critique_points: ["Clarify milestones"]
+    });
+    reasoningInvoke.mockResolvedValue({
+      content: "Reasoning draft output"
+    });
 
-    expect(resolveOpenAIModel()).toBe("gpt-5-mini");
+    fastWithStructuredOutput.mockImplementation((schema: unknown) => {
+      if (schema === analyzerOutputSchema) {
+        return { invoke: fastStructuredInvoke };
+      }
+      return { invoke: criticStructuredInvoke };
+    });
+
+    getLLM.mockImplementation((tier: string) => {
+      if (tier === "fast") {
+        return { withStructuredOutput: fastWithStructuredOutput };
+      }
+      return { invoke: reasoningInvoke };
+    });
+
+    const runners = createOpenAIAgentRunners();
+    const analyzerResult = await runners.analyzer.invoke("analyze");
+    const criticResult = await runners.critic.invoke("critic");
+    const writerResult = await runners.writer.invoke("writer");
+
+    expect(getLLM).toHaveBeenNthCalledWith(1, "fast", {});
+    expect(getLLM).toHaveBeenNthCalledWith(2, "reasoning", {});
+    expect(fastWithStructuredOutput).toHaveBeenNthCalledWith(1, analyzerOutputSchema, {
+      name: "AnalyzerOutput"
+    });
+    expect(fastWithStructuredOutput).toHaveBeenNthCalledWith(2, criticOutputSchema, {
+      name: "CriticOutput"
+    });
+    expect(analyzerResult).toMatchObject({ tech_stack: ["React"] });
+    expect(criticResult).toMatchObject({ status: "NEEDS_REVISION" });
+    expect(writerResult).toBe("Reasoning draft output");
   });
 
-  it("falls back to gpt-4o-mini when both explicit and env models are missing", () => {
-    vi.stubEnv("OPENAI_MODEL", "");
+  it("passes explicit fast/reasoning model overrides to the factory", () => {
+    fastWithStructuredOutput.mockReturnValue({ invoke: fastStructuredInvoke });
+    getLLM.mockImplementation((tier: string) => {
+      if (tier === "fast") {
+        return { withStructuredOutput: fastWithStructuredOutput };
+      }
+      return { invoke: reasoningInvoke };
+    });
 
-    expect(resolveOpenAIModel()).toBe("gpt-4o-mini");
+    createOpenAIAgentRunners({
+      fastModel: "gpt-5-mini-override",
+      reasoningModel: "gpt-5.4-override"
+    });
+
+    expect(getLLM).toHaveBeenNthCalledWith(1, "fast", {
+      fastModel: "gpt-5-mini-override",
+      reasoningModel: "gpt-5.4-override"
+    });
+    expect(getLLM).toHaveBeenNthCalledWith(2, "reasoning", {
+      fastModel: "gpt-5-mini-override",
+      reasoningModel: "gpt-5.4-override"
+    });
   });
 });

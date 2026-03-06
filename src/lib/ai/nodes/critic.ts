@@ -1,4 +1,5 @@
 import { runCriticAgent, type LlmInvoker } from "../agents";
+import { getLLM } from "../models";
 import { criticOutputSchema, type CriticOutput } from "../schemas";
 import type { ProposalGraphState } from "../state";
 
@@ -18,7 +19,13 @@ export async function criticNode(
     const rawOutput = await dependencies.critique(state);
     criticFeedback = criticOutputSchema.parse(rawOutput);
   } else {
-    throw new Error("Critic node dependencies were not provided.");
+    const model = getLLM("fast");
+    const structured = model.withStructuredOutput(criticOutputSchema, {
+      name: "CriticOutput"
+    });
+    criticFeedback = await runCriticAgent(state, {
+      invoke: (prompt) => structured.invoke(prompt)
+    });
   }
 
   return {

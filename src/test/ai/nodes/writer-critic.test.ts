@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
+const getLLM = vi.hoisted(() => vi.fn());
+const fastStructuredInvoke = vi.hoisted(() => vi.fn());
+const fastWithStructuredOutput = vi.hoisted(() => vi.fn());
+const reasoningInvoke = vi.hoisted(() => vi.fn());
+
+vi.mock("@/src/lib/ai/models", () => ({
+  getLLM
+}));
+
 import { criticNode } from "@/src/lib/ai/nodes/critic";
 import { writerNode } from "@/src/lib/ai/nodes/writer";
 import type { ProposalGraphState } from "@/src/lib/ai/state";
@@ -49,6 +58,20 @@ describe("writerNode", () => {
     expect(nextState.proposalDraft).toBe("## Proposal\n\nI can deliver this in milestones.");
     expect(nextState.executionTrace).toEqual(["writer"]);
   });
+
+  it("uses reasoning model fallback when explicit writer dependency is omitted", async () => {
+    reasoningInvoke.mockResolvedValue({
+      content: "## Proposal\n\nReasoning model draft."
+    });
+    getLLM.mockReturnValue({
+      invoke: reasoningInvoke
+    });
+
+    const nextState = await writerNode(baseState, {});
+
+    expect(getLLM).toHaveBeenCalledWith("reasoning");
+    expect(nextState.proposalDraft).toBe("## Proposal\n\nReasoning model draft.");
+  });
 });
 
 describe("criticNode", () => {
@@ -88,5 +111,29 @@ describe("criticNode", () => {
         }
       )
     ).rejects.toThrow();
+  });
+
+  it("uses fast model fallback when explicit critic dependency is omitted", async () => {
+    fastStructuredInvoke.mockResolvedValue({
+      status: "NEEDS_REVISION",
+      critique_points: ["Tighten timeline section"]
+    });
+    fastWithStructuredOutput.mockReturnValue({
+      invoke: fastStructuredInvoke
+    });
+    getLLM.mockReturnValue({
+      withStructuredOutput: fastWithStructuredOutput
+    });
+
+    const nextState = await criticNode(
+      {
+        ...baseState,
+        proposalDraft: "## Proposal\n\nDraft body"
+      },
+      {}
+    );
+
+    expect(getLLM).toHaveBeenCalledWith("fast");
+    expect(nextState.criticFeedback?.status).toBe("NEEDS_REVISION");
   });
 });

@@ -1,9 +1,7 @@
-import { ChatOpenAI } from "@langchain/openai";
-
 import { analyzerOutputSchema, criticOutputSchema, type AnalyzerOutput, type CriticOutput } from "./schemas";
 import type { ProposalGraphState } from "./state";
 import { analyzerSystemPrompt, criticSystemPrompt, writerSystemPrompt } from "./prompts";
-import { getRequiredOpenAIApiKey } from "./openai-config";
+import { getLLM, type LLMFactoryOptions } from "./models";
 import { ensureRuntimeGlobals } from "./runtime-polyfills";
 
 export interface LlmInvoker {
@@ -19,6 +17,8 @@ export interface AgentRunners {
   writer: WriterInvoker;
   critic: LlmInvoker;
 }
+
+export interface AgentRunnerModelOptions extends Pick<LLMFactoryOptions, "fastModel" | "reasoningModel"> {}
 
 export function buildAnalyzerPrompt(state: ProposalGraphState): string {
   const ragExamples = state.ragContext
@@ -166,32 +166,39 @@ function normalizeAiContent(content: unknown): string {
   return "";
 }
 
-export function resolveOpenAIModel(modelName?: string): string {
-  if (modelName?.trim()) {
-    return modelName.trim();
+function normalizeRunnerModelOptions(
+  modelOptions?: AgentRunnerModelOptions | string
+): AgentRunnerModelOptions {
+  if (!modelOptions) {
+    return {};
   }
 
-  if (process.env.OPENAI_MODEL?.trim()) {
-    return process.env.OPENAI_MODEL.trim();
+  if (typeof modelOptions === "string") {
+    const trimmed = modelOptions.trim();
+    if (!trimmed) {
+      return {};
+    }
+    // Backward compatibility: single model override applies to both tiers.
+    return {
+      fastModel: trimmed,
+      reasoningModel: trimmed
+    };
   }
 
-  return "gpt-4o-mini";
+  return modelOptions;
 }
 
-export function createOpenAIAgentRunners(modelName?: string): AgentRunners {
+export function createOpenAIAgentRunners(modelOptions?: AgentRunnerModelOptions | string): AgentRunners {
   ensureRuntimeGlobals();
 
-  const resolvedModelName = resolveOpenAIModel(modelName);
-  const chatModel = new ChatOpenAI({
-    model: resolvedModelName,
-    temperature: 0.2,
-    apiKey: getRequiredOpenAIApiKey()
-  });
+  const normalizedModelOptions = normalizeRunnerModelOptions(modelOptions);
+  const fastModel = getLLM("fast", normalizedModelOptions);
+  const reasoningModel = getLLM("reasoning", normalizedModelOptions);
 
-  const analyzerModel = chatModel.withStructuredOutput(analyzerOutputSchema, {
+  const analyzerModel = fastModel.withStructuredOutput(analyzerOutputSchema, {
     name: "AnalyzerOutput"
   });
-  const criticModel = chatModel.withStructuredOutput(criticOutputSchema, {
+  const criticModel = fastModel.withStructuredOutput(criticOutputSchema, {
     name: "CriticOutput"
   });
 
@@ -201,7 +208,7 @@ export function createOpenAIAgentRunners(modelName?: string): AgentRunners {
     },
     writer: {
       invoke: async (prompt) => {
-        const message = await chatModel.invoke(prompt);
+        const message = await reasoningModel.invoke(prompt);
         return normalizeAiContent(message.content);
       }
     },
