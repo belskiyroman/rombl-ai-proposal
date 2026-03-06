@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
+const getLLM = vi.hoisted(() => vi.fn());
+const fastStructuredInvoke = vi.hoisted(() => vi.fn());
+const fastWithStructuredOutput = vi.hoisted(() => vi.fn());
+
+vi.mock("@/src/lib/ai/models", () => ({
+  getLLM
+}));
+
 import { runAnalyzerNode } from "@/src/lib/ai/nodes";
 import type { ProposalGraphState } from "@/src/lib/ai/state";
 
@@ -66,5 +74,30 @@ describe("runAnalyzerNode (ingestion focus)", () => {
       "extend existing SaaS product",
       "ui/ux redesign in separate budget"
     ]);
+  });
+
+  it("uses fast model fallback when explicit analyzer dependency is omitted", async () => {
+    fastStructuredInvoke.mockResolvedValue({
+      tech_stack: ["Convex", "TypeScript"],
+      writing_style_analysis: {
+        formality: 6,
+        enthusiasm: 7,
+        key_vocabulary: ["milestones"],
+        sentence_structure: "direct"
+      },
+      project_constraints: ["fixed budget"]
+    });
+    fastWithStructuredOutput.mockReturnValue({
+      invoke: fastStructuredInvoke
+    });
+    getLLM.mockReturnValue({
+      withStructuredOutput: fastWithStructuredOutput
+    });
+
+    const nextState = await runAnalyzerNode(baseState, {});
+
+    expect(getLLM).toHaveBeenCalledWith("fast");
+    expect(fastWithStructuredOutput).toHaveBeenCalledOnce();
+    expect(nextState.styleProfile?.tech_stack).toEqual(["Convex", "TypeScript"]);
   });
 });

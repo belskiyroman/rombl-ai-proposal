@@ -64,6 +64,8 @@ const memberValidator = v.object({
 
 export interface IngestJobProposalPairArgs extends IngestionInput {
   embeddingModel?: string;
+  fastModel?: string;
+  reasoningModel?: string;
   chatModel?: string;
 }
 
@@ -481,10 +483,15 @@ export const ingestJobProposalPair = actionGeneric({
     proposal: proposalValidator,
     member: memberValidator,
     embeddingModel: v.optional(v.string()),
+    fastModel: v.optional(v.string()),
+    reasoningModel: v.optional(v.string()),
     chatModel: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const runners = createOpenAIAgentRunners(args.chatModel);
+    const runners = createOpenAIAgentRunners({
+      fastModel: args.fastModel ?? args.chatModel,
+      reasoningModel: args.reasoningModel ?? args.chatModel
+    });
     const mutationAdapters = createIngestionMutationAdapters(
       (mutation, mutationArgs) =>
         (ctx.runMutation as (mutationRef: unknown, args: unknown) => Promise<string>)(mutation, mutationArgs)

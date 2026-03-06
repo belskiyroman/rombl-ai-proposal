@@ -3,6 +3,7 @@ import {
   runAnalyzerAgent,
   type LlmInvoker
 } from "../agents";
+import { getLLM } from "../models";
 import { analyzerOutputSchema, type AnalyzerOutput } from "../schemas";
 import type { ProposalGraphState } from "../state";
 
@@ -22,7 +23,13 @@ export async function analyzerNode(
     const rawOutput = await dependencies.analyze(state.newJobDescription);
     styleProfile = normalizeAnalyzerOutput(analyzerOutputSchema.parse(rawOutput));
   } else {
-    throw new Error("Analyzer node dependencies were not provided.");
+    const model = getLLM("fast");
+    const structured = model.withStructuredOutput(analyzerOutputSchema, {
+      name: "AnalyzerOutput"
+    });
+    styleProfile = await runAnalyzerAgent(state, {
+      invoke: (prompt) => structured.invoke(prompt)
+    });
   }
 
   return {
