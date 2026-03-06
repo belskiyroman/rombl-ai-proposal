@@ -303,6 +303,57 @@ export const getPairs = queryGeneric({
   }
 });
 
+export const getPairDetail = queryGeneric({
+  args: {
+    id: v.id("processed_proposals")
+  },
+  handler: async (ctx, args) => {
+    const proposal = await ctx.db.get(args.id);
+    if (!proposal) return null;
+
+    const job = await ctx.db.get(proposal.rawJobId);
+    if (!job) return null;
+
+    const styleProfile = await ctx.db.get(proposal.styleProfileId);
+    if (!styleProfile) return null;
+
+    return {
+      processedProposalId: proposal._id,
+      createdAt: proposal.createdAt,
+      job: {
+        jobLink: job.jobLink ?? "",
+        title: job.title,
+        clientLocation: job.clientLocation,
+        clientReview: job.clientReview,
+        clientReviewAmount: job.clientReviewAmount,
+        clientTotalSpent: job.clientTotalSpent,
+        skills: job.skills,
+        text: job.text,
+        type: job.projectType
+      },
+      proposal: {
+        id: proposal.externalProposalId,
+        price: proposal.price,
+        viewed: proposal.viewed,
+        interview: proposal.interview,
+        offer: proposal.offer,
+        agency: proposal.agency,
+        text: proposal.text,
+        memberId: proposal.memberId
+      },
+      member: {
+        id: styleProfile.memberId,
+        name: styleProfile.memberName,
+        location: styleProfile.memberLocation,
+        jss: styleProfile.jss,
+        talentBadge: styleProfile.talentBadge ?? "",
+        agency: styleProfile.agency,
+        agencyName: styleProfile.agencyName ?? ""
+      }
+    };
+  }
+});
+
 export async function runIngestJobProposalPair(
   args: IngestJobProposalPairArgs,
   dependencies: IngestJobProposalPairDependencies

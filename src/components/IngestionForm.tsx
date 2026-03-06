@@ -218,11 +218,14 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         location: normalizedMemberLocation
       };
 
+      const autoProposalId = values.proposal.id && values.proposal.id > 0 ? values.proposal.id : Date.now();
+
       const result = await ingestAction({
         source: "manual",
         job: values.job,
         proposal: {
           ...values.proposal,
+          id: autoProposalId,
           memberId: normalizedMemberId
         },
         member: normalizedMember
@@ -743,21 +746,6 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                     <CardDescription>Outcome signals and the full proposal body.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="proposal.id"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Proposal ID</FormLabel>
-                            <FormControl>
-                              <Input {...field} type="number" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <FormField

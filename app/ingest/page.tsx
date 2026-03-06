@@ -6,7 +6,7 @@ import { ExtractionResults, type ExtractionResultsData } from "@/src/components/
 import { IngestionForm } from "@/src/components/IngestionForm";
 
 /**
- * Phase 1: Knowledge Ingestion page.
+ * Knowledge Ingestion page.
  *
  * Provides the IngestionForm to submit historical job-proposal-member data
  * and displays ExtractionResults (tech stack + style profile) after
@@ -25,7 +25,7 @@ export default function IngestPage() {
                     </div>
                     <div>
                         <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                            Phase 1: Knowledge Ingestion
+                            Knowledge Ingestion
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Submit historical job-proposal pairs to build your writing profile
