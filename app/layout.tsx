@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Inter } from "next/font/google";
 
 import { ConvexClientProvider } from "@/app/convex-client-provider";
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="min-h-screen bg-background">
             <header className="border-b border-border/60 bg-card/80 backdrop-blur-sm">
               <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-                <div className="flex items-center gap-3">
+                <Link href="/pairs" className="flex items-center gap-3 transition-opacity hover:opacity-80">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-sm font-bold text-primary-foreground shadow-sm">
                     R
                   </div>
@@ -30,7 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     <p className="text-sm font-semibold tracking-tight">ProposalGen MVP</p>
                     <p className="text-xs text-muted-foreground">Navigation</p>
                   </div>
-                </div>
+                </Link>
                 <MainNavigation />
               </div>
             </header>

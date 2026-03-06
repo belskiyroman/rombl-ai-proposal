@@ -23,7 +23,7 @@ export const jobFormSchema = z.object({
 });
 
 export const proposalFormSchema = z.object({
-    id: z.coerce.number().int().positive({ message: "Proposal ID must be a positive integer" }),
+    id: z.coerce.number().int().nonnegative(),
     viewed: z.boolean(),
     interview: z.boolean(),
     offer: z.boolean(),

@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2, Plus } from "lucide-react";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { useForm } from "react-hook-form";
 
 import { api } from "@/convex/_generated/api";
@@ -99,6 +99,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
   const [mode, setMode] = useState<"form" | "json" | "html">("form");
   const [skillInput, setSkillInput] = useState("");
   const [newMemberOpen, setNewMemberOpen] = useState(false);
+  const [isCreatingMember, setIsCreatingMember] = useState(false);
   const [newMember, setNewMember] = useState({
     id: 0,
     name: "",
@@ -111,6 +112,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
 
   const { toast } = useToast();
   const ingestAction = useAction(api.jobs.ingestJobProposalPair);
+  const createMember = useMutation(api.members.createMember);
 
   const form = useForm<IngestionFormValues>({
     resolver: zodResolver(ingestionFormSchema),
@@ -158,14 +160,32 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     syncProposalMemberId(m.id);
   }
 
-  function saveNewMember() {
+  async function saveNewMember() {
     if (!newMember.id || newMember.id <= 0) {
       toast({ title: "Member ID is required", description: "Enter a positive Member ID.", variant: "destructive" });
       return;
     }
-    applyMemberToForm(newMember);
-    setNewMemberOpen(false);
-    toast({ title: "Member added", description: `Member #${newMember.id} applied to form.` });
+    
+    setIsCreatingMember(true);
+    try {
+      await createMember({
+        memberId: newMember.id,
+        memberName: newMember.name,
+        memberLocation: newMember.location,
+        agency: newMember.agency,
+        agencyName: newMember.agencyName || undefined,
+        talentBadge: newMember.talentBadge || undefined,
+        jss: newMember.jss
+      });
+      applyMemberToForm(newMember);
+      setNewMemberOpen(false);
+      toast({ title: "Member added", description: `Member #${newMember.id} successfully created and applied.` });
+    } catch (error) {
+       const message = error instanceof Error ? error.message : "Unknown error";
+       toast({ title: "Failed to create member", description: message, variant: "destructive" });
+    } finally {
+      setIsCreatingMember(false);
+    }
   }
 
   const resetNewMemberForm = useCallback(() => {
@@ -218,11 +238,14 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         location: normalizedMemberLocation
       };
 
+      const autoProposalId = values.proposal.id && values.proposal.id > 0 ? values.proposal.id : Date.now();
+
       const result = await ingestAction({
         source: "manual",
         job: values.job,
         proposal: {
           ...values.proposal,
+          id: autoProposalId,
           memberId: normalizedMemberId
         },
         member: normalizedMember
@@ -552,8 +575,11 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setNewMemberOpen(false)}>Cancel</Button>
-                    <Button type="button" onClick={saveNewMember}>Add Member</Button>
+                    <Button type="button" variant="outline" onClick={() => setNewMemberOpen(false)} disabled={isCreatingMember}>Cancel</Button>
+                    <Button type="button" onClick={saveNewMember} disabled={isCreatingMember}>
+                      {isCreatingMember ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Add Member
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -743,21 +769,6 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                     <CardDescription>Outcome signals and the full proposal body.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="proposal.id"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Proposal ID</FormLabel>
-                            <FormControl>
-                              <Input {...field} type="number" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <FormField

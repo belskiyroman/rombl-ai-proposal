@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "convex/react";
+import { Eye } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import { Badge } from "@/src/components/ui/badge";
@@ -135,11 +136,19 @@ export default function PairsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link href={`/generate?contextId=${pair.job.externalJobId}`}>
-                          <Button size="sm" variant="outline">
-                            Generate from this
-                          </Button>
-                        </Link>
+                        <div className="flex items-center justify-end gap-2">
+                          <Link href={`/ingest/${pair.processedProposalId}`}>
+                            <Button size="icon" variant="outline" className="h-9 w-9">
+                              <span className="sr-only">View Ingestion Details</span>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          <Link href={`/generate?contextId=${pair.job.externalJobId}`}>
+                            <Button size="sm" variant="outline" className="h-9">
+                              Generate from this
+                            </Button>
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
