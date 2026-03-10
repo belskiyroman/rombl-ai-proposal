@@ -5,6 +5,7 @@ import { createProposalEngineRunners, buildCandidateEvidencePrompt } from "../sr
 import {
   candidateEvidenceInputSchema,
   candidateProfileInputSchema,
+  type CandidateEvidenceExtractionBlock,
   type CandidateEvidenceInputBlock,
   type CandidateProfileInput
 } from "../src/lib/proposal-engine/schemas";
@@ -359,12 +360,40 @@ export const deleteCandidateRecordTree = internalMutationGeneric({
   }
 });
 
-function uniqueEvidenceBlocks(blocks: CandidateEvidenceInputBlock[]): CandidateEvidenceInputBlock[] {
+type PersistableCandidateEvidenceBlock = CandidateEvidenceInputBlock | CandidateEvidenceExtractionBlock;
+
+function normalizeOptionalEvidenceString(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeEvidenceStringArray(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter((value) => value.length > 0);
+}
+
+function normalizeEvidenceBlock(block: PersistableCandidateEvidenceBlock): CandidateEvidenceInputBlock {
+  return {
+    type: block.type,
+    text: block.text.trim(),
+    tags: normalizeEvidenceStringArray(block.tags),
+    title: normalizeOptionalEvidenceString(block.title),
+    techStack: normalizeEvidenceStringArray(block.techStack),
+    domains: normalizeEvidenceStringArray(block.domains),
+    impactSummary: normalizeOptionalEvidenceString(block.impactSummary)
+  };
+}
+
+function uniqueEvidenceBlocks(blocks: PersistableCandidateEvidenceBlock[]): CandidateEvidenceInputBlock[] {
   const seen = new Set<string>();
   const result: CandidateEvidenceInputBlock[] = [];
 
-  for (const block of blocks) {
-    const key = `${block.type}:${block.text.trim().toLowerCase()}`;
+  for (const rawBlock of blocks) {
+    const block = normalizeEvidenceBlock(rawBlock);
+    const key = `${block.type}:${block.text.toLowerCase()}`;
     if (seen.has(key)) {
       continue;
     }
@@ -378,7 +407,7 @@ function uniqueEvidenceBlocks(blocks: CandidateEvidenceInputBlock[]): CandidateE
 
 async function buildCandidateEvidenceDocuments(args: {
   candidateId: number;
-  blocks: CandidateEvidenceInputBlock[];
+  blocks: PersistableCandidateEvidenceBlock[];
   source: "candidate_profile" | "case_inference";
   createdAt: number;
   embeddingModel?: string;

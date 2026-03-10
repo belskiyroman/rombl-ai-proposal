@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createProposalEngineRunners } from "@/src/lib/proposal-engine/agents";
+import { candidateEvidenceExtractionSchema } from "@/src/lib/proposal-engine/schemas";
 
 const originalPerformance = globalThis.performance;
 
@@ -26,5 +27,24 @@ describe("createProposalEngineRunners", () => {
 
     expect(globalThis.performance).toBeDefined();
     expect(typeof globalThis.performance.now).toBe("function");
+  });
+
+  it("uses nullable fields for candidate evidence structured extraction", () => {
+    const result = candidateEvidenceExtractionSchema.parse({
+      blocks: [
+        {
+          type: "project",
+          text: "Built and shipped multiple SaaS MVPs with Next.js and Node.js.",
+          tags: ["MVP", "Next.js"],
+          title: null,
+          techStack: ["Next.js", "Node.js"],
+          domains: ["SaaS"],
+          impactSummary: null
+        }
+      ]
+    });
+
+    expect(result.blocks[0]?.title).toBeNull();
+    expect(result.blocks[0]?.impactSummary).toBeNull();
   });
 });
