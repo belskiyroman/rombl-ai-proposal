@@ -151,8 +151,18 @@ export const candidateEvidenceInputSchema = z.object({
   blocks: z.array(candidateEvidenceInputBlockSchema).default([])
 });
 
+export const candidateEvidenceExtractionBlockSchema = z.object({
+  type: evidenceTypeSchema,
+  text: z.string().trim().min(1),
+  tags: z.array(z.string().trim().min(1)),
+  title: z.string().trim().min(1).nullable(),
+  techStack: z.array(z.string().trim().min(1)),
+  domains: z.array(z.string().trim().min(1)),
+  impactSummary: z.string().trim().min(1).nullable()
+});
+
 export const candidateEvidenceExtractionSchema = z.object({
-  blocks: z.array(candidateEvidenceInputBlockSchema).min(1)
+  blocks: z.array(candidateEvidenceExtractionBlockSchema).min(1)
 });
 
 export const historicalCaseInputSchema = z.object({
@@ -193,6 +203,7 @@ export type OutcomeSignals = z.infer<typeof outcomeSignalsSchema>;
 export type CandidateProfileInput = z.infer<typeof candidateProfileInputSchema>;
 export type CandidateEvidenceInput = z.infer<typeof candidateEvidenceInputSchema>;
 export type CandidateEvidenceInputBlock = z.infer<typeof candidateEvidenceInputBlockSchema>;
+export type CandidateEvidenceExtractionBlock = z.infer<typeof candidateEvidenceExtractionBlockSchema>;
 export type CandidateEvidenceExtraction = z.infer<typeof candidateEvidenceExtractionSchema>;
 export type HistoricalCaseInput = z.infer<typeof historicalCaseInputSchema>;
 export type GenerationJobInput = z.infer<typeof generationJobInputSchema>;
