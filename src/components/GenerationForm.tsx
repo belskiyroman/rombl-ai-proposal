@@ -85,7 +85,7 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
   }
 
   return (
-    <Card className="border-0 shadow-lg">
+    <Card>
       <CardHeader className="space-y-4">
         <div>
           <CardTitle className="text-xl">Generate Proposal</CardTitle>
@@ -161,7 +161,7 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
               )}
             />
 
-            <Button type="submit" disabled={isSubmitting || candidates.length === 0}>
+            <Button type="submit" disabled={isSubmitting || candidates.length === 0} className="w-full sm:w-auto">
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />

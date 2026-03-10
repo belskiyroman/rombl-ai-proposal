@@ -88,7 +88,7 @@ export function GenerationSnapshotView({
 
   return (
     <div className="space-y-6">
-      <Card className="border-0 shadow-lg">
+      <Card>
         <CardHeader className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -100,7 +100,7 @@ export function GenerationSnapshotView({
               </CardDescription>
             </div>
             {snapshot ? (
-              <Badge variant={snapshot.approvalStatus === "APPROVED" ? "default" : "outline"}>
+              <Badge variant={snapshot.approvalStatus === "APPROVED" ? "success" : "outline"}>
                 {snapshot.approvalStatus}
               </Badge>
             ) : (
@@ -130,11 +130,10 @@ export function GenerationSnapshotView({
             </div>
             <p className="text-xs text-muted-foreground">
               {snapshot
-                ? `Trace: ${
-                    snapshot.executionTrace.length > 0
-                      ? snapshot.executionTrace.join(" -> ")
-                      : "Unavailable for this run"
-                  } • ${snapshot.telemetrySummary.totalTokens} tokens • ${formatDuration(snapshot.telemetrySummary.totalDurationMs)}`
+                ? `Trace: ${snapshot.executionTrace.length > 0
+                  ? snapshot.executionTrace.join(" -> ")
+                  : "Unavailable for this run"
+                } • ${snapshot.telemetrySummary.totalTokens} tokens • ${formatDuration(snapshot.telemetrySummary.totalDurationMs)}`
                 : "Run generation to see the full trace."}
             </p>
           </div>
@@ -143,7 +142,7 @@ export function GenerationSnapshotView({
 
       {snapshot ? (
         <>
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Job Understanding</CardTitle>
               <CardDescription>{snapshot.jobUnderstanding.jobSummary}</CardDescription>
@@ -156,14 +155,14 @@ export function GenerationSnapshotView({
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Selected Evidence</CardTitle>
               <CardDescription>These are the only factual blocks the writer was allowed to cite.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {snapshot.selectedEvidence.map((item) => (
-                <div key={item.id} className="rounded-lg border p-4">
+                <div key={item.id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge>{item.type}</Badge>
                     <span className="text-xs text-muted-foreground">{item.reason}</span>
@@ -174,7 +173,7 @@ export function GenerationSnapshotView({
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Proposal Plan</CardTitle>
               <CardDescription>{snapshot.proposalPlan.openingAngle}</CardDescription>
@@ -186,7 +185,7 @@ export function GenerationSnapshotView({
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Retrieved Signals</CardTitle>
               <CardDescription>Canonical cases, fragments, and evidence candidates used during retrieval.</CardDescription>
@@ -198,7 +197,7 @@ export function GenerationSnapshotView({
                   <p className="text-sm text-muted-foreground">Snapshot unavailable for this run.</p>
                 ) : (
                   snapshot.retrievedContext.similarCases.map((item) => (
-                    <div key={item._id} className="rounded-lg border p-3">
+                    <div key={item._id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-3">
                       <p className="font-medium">{item.jobTitle}</p>
                       <p className="text-sm text-muted-foreground">{item.jobExtract.summary}</p>
                     </div>
@@ -223,7 +222,7 @@ export function GenerationSnapshotView({
                   <p className="text-sm text-muted-foreground">No saved evidence-candidate snapshot.</p>
                 ) : (
                   snapshot.retrievedContext.evidenceCandidates.map((item) => (
-                    <div key={item._id} className="rounded-lg border p-3">
+                    <div key={item._id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="secondary">{item.type}</Badge>
                         <Badge variant="outline">{item.source}</Badge>
@@ -236,7 +235,7 @@ export function GenerationSnapshotView({
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Evaluator</CardTitle>
               <CardDescription>
@@ -245,9 +244,9 @@ export function GenerationSnapshotView({
             </CardHeader>
             <CardContent className="space-y-4">
               {snapshot.critiqueHistory.map((critique, index) => (
-                <div key={`critique-${index}`} className="rounded-lg border p-4">
+                <div key={`critique-${index}`} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={critique.approvalStatus === "APPROVED" ? "default" : "outline"}>
+                    <Badge variant={critique.approvalStatus === "APPROVED" ? "success" : "outline"}>
                       Pass {index + 1}: {critique.approvalStatus}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
@@ -258,14 +257,14 @@ export function GenerationSnapshotView({
                   <MiniList title="Revision Instructions" items={critique.revisionInstructions} />
                 </div>
               ))}
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4 text-sm text-muted-foreground">
                 Max paragraph cosine: {snapshot.copyRisk.maxParagraphCosine.toFixed(2)}. Trigram overlap:{" "}
                 {snapshot.copyRisk.trigramOverlap.toFixed(2)}.
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Execution Trace</CardTitle>
               <CardDescription>Graph stages executed for this saved run.</CardDescription>
@@ -285,29 +284,29 @@ export function GenerationSnapshotView({
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg">
+          <Card>
             <CardHeader>
               <CardTitle>Telemetry</CardTitle>
               <CardDescription>Exact per-step timing and token usage captured for this run.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Steps</p>
+                <div className="stat-card">
+                  <p className="section-label">Total Steps</p>
                   <p className="mt-2 text-xl font-semibold">{snapshot.telemetrySummary.totalSteps}</p>
                 </div>
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Duration</p>
+                <div className="stat-card">
+                  <p className="section-label">Total Duration</p>
                   <p className="mt-2 text-xl font-semibold">{formatDuration(snapshot.telemetrySummary.totalDurationMs)}</p>
                 </div>
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Input / Output Tokens</p>
+                <div className="stat-card">
+                  <p className="section-label">Input / Output Tokens</p>
                   <p className="mt-2 text-xl font-semibold">
                     {snapshot.telemetrySummary.totalInputTokens} / {snapshot.telemetrySummary.totalOutputTokens}
                   </p>
                 </div>
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Tokens</p>
+                <div className="stat-card">
+                  <p className="section-label">Total Tokens</p>
                   <p className="mt-2 text-xl font-semibold">{snapshot.telemetrySummary.totalTokens}</p>
                 </div>
               </div>
@@ -319,7 +318,7 @@ export function GenerationSnapshotView({
                   {snapshot.stepTelemetry.map((step, index) => (
                     <div
                       key={`${step.step}-${step.fragmentType ?? "base"}-${step.attempt ?? 0}-${index}`}
-                      className="rounded-lg border p-4"
+                      className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4"
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge>{step.stage}</Badge>

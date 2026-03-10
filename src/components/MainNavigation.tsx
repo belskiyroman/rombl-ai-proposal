@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { Button } from "@/src/components/ui/button";
 import { cn } from "@/src/lib/utils";
 
 const navigationItems = [
@@ -21,15 +20,21 @@ export function MainNavigation() {
         const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
 
         return (
-          <Button
+          <Link
             key={item.href}
-            asChild
-            size="sm"
-            variant="ghost"
-            className={cn("text-sm", isActive && "bg-accent text-accent-foreground")}
+            href={item.href}
+            className={cn(
+              "relative px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+              isActive
+                ? "text-primary bg-primary/10 shadow-sm shadow-primary/5"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+            )}
           >
-            <Link href={item.href}>{item.label}</Link>
-          </Button>
+            {item.label}
+            {isActive && (
+              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-[2px] rounded-full bg-primary" />
+            )}
+          </Link>
         );
       })}
     </nav>
