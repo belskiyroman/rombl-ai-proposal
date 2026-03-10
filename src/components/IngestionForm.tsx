@@ -326,27 +326,27 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         evidenceIds: result.evidenceIds,
         jobExtract: result.jobExtract
           ? {
-              projectType: result.jobExtract.projectType,
-              domain: result.jobExtract.domain,
-              stack: result.jobExtract.stack,
-              clientNeeds: result.jobExtract.clientNeeds,
-              summary: result.jobExtract.summary
-            }
+            projectType: result.jobExtract.projectType,
+            domain: result.jobExtract.domain,
+            stack: result.jobExtract.stack,
+            clientNeeds: result.jobExtract.clientNeeds,
+            summary: result.jobExtract.summary
+          }
           : null,
         proposalExtract: result.proposalExtract
           ? {
-              hook: result.proposalExtract.hook,
-              tone: result.proposalExtract.tone,
-              valueProposition: result.proposalExtract.valueProposition
-            }
+            hook: result.proposalExtract.hook,
+            tone: result.proposalExtract.tone,
+            valueProposition: result.proposalExtract.valueProposition
+          }
           : null,
         quality: result.quality
           ? {
-              overall: result.quality.overall,
-              humanScore: result.quality.humanScore,
-              specificityScore: result.quality.specificityScore,
-              genericnessScore: result.quality.genericnessScore
-            }
+            overall: result.quality.overall,
+            humanScore: result.quality.humanScore,
+            specificityScore: result.quality.specificityScore,
+            genericnessScore: result.quality.genericnessScore
+          }
           : null
       });
 
@@ -426,10 +426,11 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
   }
 
   return (
-    <Card className="border-0 shadow-lg">
+    <Card>
       <CardHeader className="space-y-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-2">
+            <p className="section-label">Workspace</p>
             <CardTitle className="text-xl">Candidate Console</CardTitle>
             <CardDescription>
               Build candidate memory, manage grounded evidence, and ingest historical cases into the library.
@@ -468,24 +469,47 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
           {profileOptions.length === 0 ? <Badge variant="outline">No candidates yet</Badge> : null}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant={mode === "profile" ? "default" : "outline"} onClick={() => setMode("profile")}>
+        {/* Mode Tabs */}
+        <div className="flex gap-1 rounded-xl bg-white/[0.03] p-1 border border-white/[0.06]">
+          <button
+            type="button"
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${mode === "profile"
+                ? "bg-primary/15 text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+              }`}
+            onClick={() => setMode("profile")}
+          >
             Candidate Profile
-          </Button>
-          <Button type="button" size="sm" variant={mode === "evidence" ? "default" : "outline"} onClick={() => setMode("evidence")}>
+          </button>
+          <button
+            type="button"
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${mode === "evidence"
+                ? "bg-primary/15 text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+              }`}
+            onClick={() => setMode("evidence")}
+          >
             Candidate Evidence
-          </Button>
-          <Button type="button" size="sm" variant={mode === "case" ? "default" : "outline"} onClick={() => setMode("case")}>
+          </button>
+          <button
+            type="button"
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${mode === "case"
+                ? "bg-primary/15 text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
+              }`}
+            onClick={() => setMode("case")}
+          >
             Historical Case
-          </Button>
+          </button>
         </div>
       </CardHeader>
 
       <CardContent>
         <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          {/* Sidebar */}
           <div className="space-y-4">
-            <div className="rounded-2xl border bg-muted/20 p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Workspace</p>
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+              <p className="section-label">Workspace</p>
               <h3 className="mt-2 text-xl font-semibold">
                 {selectedProfile?.displayName ?? `New Candidate #${workspaceCandidateId}`}
               </h3>
@@ -495,26 +519,26 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                   : "Create the candidate profile first, then add evidence and historical cases against this workspace."}
               </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-xl border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tone</p>
+                <div className="stat-card">
+                  <p className="section-label">Tone</p>
                   <p className="mt-2 text-lg font-semibold capitalize">
                     {selectedProfile?.toneProfile ?? profileForm.watch("toneProfile")}
                   </p>
                 </div>
-                <div className="rounded-xl border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Evidence</p>
+                <div className="stat-card">
+                  <p className="section-label">Evidence</p>
                   <p className="mt-2 text-lg font-semibold">
                     {selectedProfile?.activeEvidenceCount ?? 0} active
                   </p>
                 </div>
-                <div className="rounded-xl border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Case-derived Signals</p>
+                <div className="stat-card">
+                  <p className="section-label">Case-derived Signals</p>
                   <p className="mt-2 text-lg font-semibold">
                     {selectedProfile?.historicalEvidenceCount ?? 0}
                   </p>
                 </div>
-                <div className="rounded-xl border bg-background p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Updated</p>
+                <div className="stat-card">
+                  <p className="section-label">Updated</p>
                   <p className="mt-2 text-sm font-medium">
                     {selectedProfile ? formatTimestamp(selectedProfile.updatedAt) : "Not saved yet"}
                   </p>
@@ -529,7 +553,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
               </div>
             </div>
 
-            <div className="rounded-2xl border p-5">
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-medium">Candidate Evidence</p>
@@ -539,12 +563,12 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
               </div>
               <div className="mt-4 space-y-3">
                 {candidateEvidenceBlocks.length === 0 ? (
-                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                  <p className="rounded-xl border border-dashed border-white/[0.08] p-4 text-sm text-muted-foreground">
                     No candidate-authored evidence blocks yet.
                   </p>
                 ) : (
                   candidateEvidenceBlocks.map((block) => (
-                    <div key={block._id} className="rounded-xl border p-4">
+                    <div key={block._id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="space-y-2">
                           <div className="flex flex-wrap gap-2">
@@ -576,7 +600,8 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
             </div>
           </div>
 
-          <div className="rounded-2xl border p-5">
+          {/* Main form area */}
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
             {mode === "profile" ? (
               <Form {...profileForm}>
                 <form className="space-y-5" onSubmit={profileForm.handleSubmit(onSubmitProfile)}>
@@ -693,9 +718,9 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {profileForm.watch("coreDomains").map((domain) => (
-                        <div key={domain} className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm">
+                        <div key={domain} className="flex items-center gap-1 rounded-full border border-white/[0.08] px-3 py-1 text-sm">
                           <span>{domain}</span>
-                          <button type="button" className="text-muted-foreground" onClick={() => removeDomain(domain)}>
+                          <button type="button" className="text-muted-foreground hover:text-foreground transition-colors" onClick={() => removeDomain(domain)}>
                             ×
                           </button>
                         </div>

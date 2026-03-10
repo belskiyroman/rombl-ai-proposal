@@ -5,42 +5,42 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src
 
 export type ExtractionResultsData =
   | {
-      operation: "profile";
-      candidateId: number;
-      profileId: string;
-      evidenceCount: number;
-    }
+    operation: "profile";
+    candidateId: number;
+    profileId: string;
+    evidenceCount: number;
+  }
   | {
-      operation: "evidence";
-      candidateId: number;
-      evidenceCount: number;
-    }
+    operation: "evidence";
+    candidateId: number;
+    evidenceCount: number;
+  }
   | {
-      operation: "case";
-      historicalCaseId: string;
-      clusterId: string | null;
-      canonical: boolean;
-      fragmentIds: string[];
-      evidenceIds: string[];
-      jobExtract?: {
-        projectType: string;
-        domain: string;
-        stack: string[];
-        clientNeeds: string[];
-        summary: string;
-      } | null;
-      proposalExtract?: {
-        hook: string;
-        tone: string;
-        valueProposition: string;
-      } | null;
-      quality?: {
-        overall: number;
-        humanScore: number;
-        specificityScore: number;
-        genericnessScore: number;
-      } | null;
-    };
+    operation: "case";
+    historicalCaseId: string;
+    clusterId: string | null;
+    canonical: boolean;
+    fragmentIds: string[];
+    evidenceIds: string[];
+    jobExtract?: {
+      projectType: string;
+      domain: string;
+      stack: string[];
+      clientNeeds: string[];
+      summary: string;
+    } | null;
+    proposalExtract?: {
+      hook: string;
+      tone: string;
+      valueProposition: string;
+    } | null;
+    quality?: {
+      overall: number;
+      humanScore: number;
+      specificityScore: number;
+      genericnessScore: number;
+    } | null;
+  };
 
 interface ExtractionResultsProps {
   data: ExtractionResultsData;
@@ -48,8 +48,8 @@ interface ExtractionResultsProps {
 
 function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border bg-muted/20 p-4">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div className="stat-card">
+      <p className="section-label">{label}</p>
       <p className="mt-2 text-lg font-semibold">{value}</p>
     </div>
   );
@@ -58,7 +58,7 @@ function MetricCard({ label, value }: { label: string; value: string | number })
 export function ExtractionResults({ data }: ExtractionResultsProps) {
   if (data.operation === "profile") {
     return (
-      <Card className="border-0 shadow-lg">
+      <Card>
         <CardHeader>
           <CardTitle>Candidate Profile Saved</CardTitle>
           <CardDescription>Profile and derived evidence blocks are now available for retrieval.</CardDescription>
@@ -74,7 +74,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
 
   if (data.operation === "evidence") {
     return (
-      <Card className="border-0 shadow-lg">
+      <Card>
         <CardHeader>
           <CardTitle>Evidence Ingested</CardTitle>
           <CardDescription>Candidate evidence is now searchable for grounded proposal generation.</CardDescription>
@@ -89,14 +89,14 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
 
   return (
     <div className="space-y-6">
-      <Card className="border-0 shadow-lg">
+      <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>Historical Case Ingested</CardTitle>
               <CardDescription>Case, cluster, fragments, and seed evidence were generated for the live engine.</CardDescription>
             </div>
-            <Badge variant={data.canonical ? "default" : "outline"}>
+            <Badge variant={data.canonical ? "success" : "outline"}>
               {data.canonical ? "Canonical" : "Variant"}
             </Badge>
           </div>
@@ -109,7 +109,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
       </Card>
 
       {data.jobExtract ? (
-        <Card className="border-0 shadow-lg">
+        <Card>
           <CardHeader>
             <CardTitle>Job Understanding Snapshot</CardTitle>
             <CardDescription>Structured metadata extracted from the ingested historical job.</CardDescription>
@@ -130,7 +130,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
       ) : null}
 
       {data.proposalExtract ? (
-        <Card className="border-0 shadow-lg">
+        <Card>
           <CardHeader>
             <CardTitle>Proposal Pattern Snapshot</CardTitle>
             <CardDescription>Key persuasive components extracted from the historical proposal.</CardDescription>
@@ -147,7 +147,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
       ) : null}
 
       {data.quality ? (
-        <Card className="border-0 shadow-lg">
+        <Card>
           <CardHeader>
             <CardTitle>Quality Signals</CardTitle>
             <CardDescription>Stored quality scores used later during retrieval and ranking.</CardDescription>

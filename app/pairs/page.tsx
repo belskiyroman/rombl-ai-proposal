@@ -172,7 +172,7 @@ function OutcomeBadges({ outcome }: { outcome?: { reply?: boolean; interview?: b
     <div className="flex flex-wrap gap-2">
       {outcome.reply ? <Badge variant="secondary">reply</Badge> : null}
       {outcome.interview ? <Badge variant="secondary">interview</Badge> : null}
-      {outcome.hired ? <Badge>hired</Badge> : null}
+      {outcome.hired ? <Badge variant="success">hired</Badge> : null}
     </div>
   );
 }
@@ -200,7 +200,7 @@ function LoadingCards() {
   return (
     <div className="space-y-3">
       {Array.from({ length: 4 }).map((_, index) => (
-        <div key={`loading-case-${index}`} className="rounded-xl border p-4">
+        <div key={`loading-case-${index}`} className="rounded-xl border border-white/[0.06] p-4">
           <Skeleton className="h-4 w-40" />
           <Skeleton className="mt-3 h-4 w-full" />
           <Skeleton className="mt-2 h-4 w-3/4" />
@@ -349,11 +349,11 @@ export default function PairsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
-      <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+    <main className="min-h-[calc(100vh-52px)]">
+      <div className="mx-auto max-w-7xl space-y-6 px-6 py-8 animate-fade-in">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">Library Console</p>
+            <p className="section-label">Library Console</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">Canonical Case Library</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Browse the proposal memory, inspect cluster variants, and maintain the historical cases that drive grounded generation.
@@ -381,7 +381,7 @@ export default function PairsPage() {
           </Card>
         ) : (
           <>
-            <Card className="border-0 shadow-lg">
+            <Card>
               <CardHeader>
                 <CardTitle>Candidate Scope</CardTitle>
                 <CardDescription>Select the candidate whose library you want to manage.</CardDescription>
@@ -403,22 +403,22 @@ export default function PairsPage() {
 
                 {selectedCandidate ? (
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Tone Profile</p>
+                    <div className="stat-card">
+                      <p className="section-label">Tone Profile</p>
                       <p className="mt-2 text-lg font-semibold capitalize">{selectedCandidate.toneProfile}</p>
                     </div>
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Canonical Cases</p>
+                    <div className="stat-card">
+                      <p className="section-label">Canonical Cases</p>
                       <p className="mt-2 text-lg font-semibold">{canonicalCases?.length ?? "..."}</p>
                     </div>
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Clusters / Variants</p>
+                    <div className="stat-card">
+                      <p className="section-label">Clusters / Variants</p>
                       <p className="mt-2 text-lg font-semibold">
                         {clusters?.length ?? "..."} / {clusters ? totalVariants : "..."}
                       </p>
                     </div>
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Avg Cluster Size</p>
+                    <div className="stat-card">
+                      <p className="section-label">Avg Cluster Size</p>
                       <p className="mt-2 text-lg font-semibold">{averageClusterSize ? averageClusterSize.toFixed(1) : "0.0"}</p>
                     </div>
                   </div>
@@ -427,7 +427,7 @@ export default function PairsPage() {
             </Card>
 
             <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-              <Card className="border-0 shadow-lg">
+              <Card>
                 <CardHeader>
                   <CardTitle>Canonical Cases</CardTitle>
                   <CardDescription>Search and select a representative case to inspect or edit.</CardDescription>
@@ -442,7 +442,7 @@ export default function PairsPage() {
                   {!canonicalCases ? (
                     <LoadingCards />
                   ) : filteredCases.length === 0 ? (
-                    <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+                    <div className="rounded-xl border border-dashed border-white/[0.08] p-6 text-sm text-muted-foreground">
                       No canonical cases match the current filter.
                     </div>
                   ) : (
@@ -452,9 +452,10 @@ export default function PairsPage() {
                           key={item._id}
                           type="button"
                           onClick={() => setSelectedCaseId(item._id)}
-                          className={`w-full rounded-xl border p-4 text-left transition ${
-                            selectedCaseId === item._id ? "border-foreground shadow-sm" : "hover:border-foreground/40"
-                          }`}
+                          className={`w-full rounded-xl border p-4 text-left transition-all duration-200 ${selectedCaseId === item._id
+                              ? "border-primary/40 bg-primary/5 shadow-sm shadow-primary/5"
+                              : "border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02]"
+                            }`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
@@ -484,13 +485,13 @@ export default function PairsPage() {
 
               <div className="space-y-6">
                 {!selectedCaseId ? (
-                  <Card className="border-0 shadow-lg">
+                  <Card>
                     <CardContent className="py-12 text-center text-sm text-muted-foreground">
                       Select a canonical case to inspect its full job, proposal, fragments, evidence, and cluster variants.
                     </CardContent>
                   </Card>
                 ) : selectedCase === undefined ? (
-                  <Card className="border-0 shadow-lg">
+                  <Card>
                     <CardContent className="space-y-4 py-8">
                       <Skeleton className="h-6 w-64" />
                       <Skeleton className="h-40 w-full" />
@@ -498,14 +499,14 @@ export default function PairsPage() {
                     </CardContent>
                   </Card>
                 ) : selectedCase === null ? (
-                  <Card className="border-0 shadow-lg">
+                  <Card>
                     <CardContent className="py-12 text-center text-sm text-muted-foreground">
                       This case is no longer available.
                     </CardContent>
                   </Card>
                 ) : (
                   <>
-                    <Card className="border-0 shadow-lg">
+                    <Card>
                       <CardHeader className="space-y-3">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div>
@@ -531,7 +532,7 @@ export default function PairsPage() {
                         <div className="flex flex-wrap gap-2">
                           <Badge>{selectedCase.domain}</Badge>
                           <Badge variant="secondary">{selectedCase.projectType}</Badge>
-                          <Badge variant={selectedCase.canonical ? "default" : "outline"}>
+                          <Badge variant={selectedCase.canonical ? "success" : "outline"}>
                             {selectedCase.canonical ? "Canonical" : "Variant"}
                           </Badge>
                           {selectedCase.cluster ? (
@@ -541,33 +542,33 @@ export default function PairsPage() {
                         <OutcomeBadges outcome={selectedCase.outcome} />
                       </CardHeader>
                       <CardContent className="space-y-6">
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                          <div className="rounded-xl border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Quality</p>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <div className="stat-card">
+                            <p className="section-label">Quality</p>
                             <p className="mt-2 text-lg font-semibold">{selectedCase.quality.overall.toFixed(2)}</p>
                           </div>
-                          <div className="rounded-xl border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Specificity</p>
+                          <div className="stat-card">
+                            <p className="section-label">Specificity</p>
                             <p className="mt-2 text-lg font-semibold">{selectedCase.quality.specificityScore.toFixed(2)}</p>
                           </div>
-                          <div className="rounded-xl border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Genericness</p>
+                          <div className="stat-card">
+                            <p className="section-label">Genericness</p>
                             <p className="mt-2 text-lg font-semibold">{selectedCase.quality.genericnessScore.toFixed(2)}</p>
                           </div>
-                          <div className="rounded-xl border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Cluster Size</p>
+                          <div className="stat-card">
+                            <p className="section-label">Cluster Size</p>
                             <p className="mt-2 text-lg font-semibold">{selectedCase.cluster?.clusterSize ?? 1}</p>
                           </div>
                         </div>
 
                         <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="rounded-xl border p-4">
+                          <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                             <p className="text-sm font-medium">Raw Job Description</p>
                             <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
                               {selectedCase.rawJobDescription}
                             </p>
                           </div>
-                          <div className="rounded-xl border p-4">
+                          <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                             <p className="text-sm font-medium">Raw Proposal Text</p>
                             <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
                               {selectedCase.rawProposalText}
@@ -576,7 +577,7 @@ export default function PairsPage() {
                         </div>
 
                         <div className="grid gap-6 lg:grid-cols-2">
-                          <div className="space-y-4 rounded-xl border p-4">
+                          <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                             <div>
                               <p className="text-sm font-medium">Proposal Structure</p>
                               <p className="mt-2 text-sm text-muted-foreground">{selectedCase.proposalExtract.valueProposition}</p>
@@ -587,7 +588,7 @@ export default function PairsPage() {
                             <MiniList title="Proof Points" items={selectedCase.proposalExtract.proofPoints} />
                           </div>
 
-                          <div className="space-y-4 rounded-xl border p-4">
+                          <div className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                             <div>
                               <p className="text-sm font-medium">Job and Delivery Signals</p>
                               <p className="mt-2 text-sm text-muted-foreground">{selectedCase.proposalExtract.hook}</p>
@@ -601,7 +602,7 @@ export default function PairsPage() {
                       </CardContent>
                     </Card>
 
-                    <Card className="border-0 shadow-lg">
+                    <Card>
                       <CardHeader>
                         <CardTitle>Fragments and Inferred Evidence</CardTitle>
                         <CardDescription>These are the reusable artifacts derived from this case.</CardDescription>
@@ -612,10 +613,10 @@ export default function PairsPage() {
                             <p className="text-sm text-muted-foreground">No fragments derived from this case.</p>
                           ) : (
                             selectedCase.fragments.map((fragment) => (
-                              <div key={fragment._id} className="rounded-xl border p-4">
+                              <div key={fragment._id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                                 <div className="flex flex-wrap gap-2">
                                   <Badge>{fragment.fragmentType}</Badge>
-                                  <Badge variant={fragment.retrievalEligible ? "default" : "outline"}>
+                                  <Badge variant={fragment.retrievalEligible ? "success" : "outline"}>
                                     {fragment.retrievalEligible ? "retrieval eligible" : "inactive"}
                                   </Badge>
                                   <Badge variant="outline">Q {fragment.qualityScore.toFixed(2)}</Badge>
@@ -638,10 +639,10 @@ export default function PairsPage() {
                             <p className="text-sm text-muted-foreground">No inferred evidence blocks were created for this case.</p>
                           ) : (
                             selectedCase.evidenceBlocks.map((block) => (
-                              <div key={block._id} className="rounded-xl border p-4">
+                              <div key={block._id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                                 <div className="flex flex-wrap gap-2">
                                   <Badge>{block.type}</Badge>
-                                  <Badge variant={block.active ? "default" : "outline"}>
+                                  <Badge variant={block.active ? "success" : "outline"}>
                                     {block.active ? "active" : "inactive"}
                                   </Badge>
                                   <Badge variant="outline">Confidence {block.confidence.toFixed(2)}</Badge>
@@ -656,7 +657,7 @@ export default function PairsPage() {
                       </CardContent>
                     </Card>
 
-                    <Card className="border-0 shadow-lg">
+                    <Card>
                       <CardHeader>
                         <CardTitle>Cluster Variants</CardTitle>
                         <CardDescription>Inspect every case currently grouped with this representative.</CardDescription>
@@ -666,11 +667,11 @@ export default function PairsPage() {
                           <p className="text-sm text-muted-foreground">This case is not grouped with other variants.</p>
                         ) : (
                           selectedCase.clusterCases.map((variant) => (
-                            <div key={variant._id} className="rounded-xl border p-4">
+                            <div key={variant._id} className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
                               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="space-y-2">
                                   <div className="flex flex-wrap gap-2">
-                                    <Badge variant={variant.canonical ? "default" : "outline"}>
+                                    <Badge variant={variant.canonical ? "success" : "outline"}>
                                       {variant.canonical ? "Representative" : "Variant"}
                                     </Badge>
                                     <Badge variant="outline">Q {variant.overallQuality.toFixed(2)}</Badge>
@@ -717,7 +718,7 @@ export default function PairsPage() {
               </div>
             </div>
 
-            <Card className="border-0 shadow-lg">
+            <Card>
               <CardHeader>
                 <CardTitle>Duplicate Clusters</CardTitle>
                 <CardDescription>Near-duplicate control that keeps retrieval diverse and representative-focused.</CardDescription>

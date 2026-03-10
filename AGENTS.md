@@ -45,6 +45,7 @@ The goal is not to copy past proposals. The goal is to reuse high-signal pattern
     - `rawJobEmbedding`
     - `jobSummaryEmbedding`
     - `needsEmbedding`
+  - currently also keeps an optional `source` field only as a compatibility shim for older local Convex documents; new logic must not rely on it
 
 - `proposal_clusters`
   - dedupe control for exact and near-duplicate proposals
@@ -61,13 +62,15 @@ The goal is not to copy past proposals. The goal is to reuse high-signal pattern
   - stores:
     - job input
     - job understanding
+    - candidate snapshot
     - selected evidence
     - proposal plan
+    - execution trace
     - retrieved ids and retrieved-context snapshot
     - draft history
     - critique history
     - copy-risk result
-    - telemetry
+    - step telemetry and telemetry summary
     - final proposal
 
 There are no legacy V1 tables in the current schema.
@@ -95,7 +98,25 @@ Candidate management is handled through `convex/profiles.ts`.
 - Candidate deletion cascades through evidence, fragments, historical cases, clusters, and saved generation runs
 - The UI treats candidate selection as the workspace context; users do not manually manage separate member entities anymore
 
-## 5. Historical Case Library
+## 5. Read APIs
+
+Library and saved-run read models are split out of write actions.
+
+### Library queries
+
+- `library.listCanonicalCases`
+- `library.listClusters`
+- `library.getHistoricalCaseDetail`
+- `library.getHistoricalCasesByIds`
+- `library.getProposalFragmentsByIds`
+- `library.getCandidateEvidenceByIds`
+
+### Saved run queries
+
+- `runs.listGenerationRuns`
+- `runs.getGenerationRun`
+
+## 6. Historical Case Library
 
 Historical case processing is handled through `convex/cases.ts` and `src/lib/proposal-engine/offline.ts`.
 
@@ -135,7 +156,21 @@ Representative selection prefers, in order:
 3. higher specificity
 4. shorter cleaner text
 
-## 6. Structured Contracts
+## 7. Generation Entry Points
+
+Online proposal generation is handled through `convex/generate.ts`.
+
+### Public API
+
+- `generate.createProposal`
+
+### Behavior
+
+- writes immutable saved snapshots into `generation_runs`
+- returns the generated proposal plus the saved run id for history/detail screens
+- uses the structured proposal engine in `src/lib/proposal-engine`
+
+## 8. Structured Contracts
 
 ### Job extraction
 
@@ -201,7 +236,7 @@ Representative selection prefers, in order:
 - `approvalStatus`
 - `copyRisk`
 
-## 7. Retrieval Strategy
+## 9. Retrieval Strategy
 
 Retrieval is not a single raw-text RAG query.
 
@@ -237,7 +272,7 @@ Retrieval is not a single raw-text RAG query.
   - max `2` blocks of the same type
 - final output: exactly `4` evidence blocks
 
-## 8. Online Generation Graph
+## 10. Online Generation Graph
 
 The online graph lives in `src/lib/proposal-engine/graph.ts`.
 
@@ -275,7 +310,7 @@ The writer must not invent:
 - team size
 - unsupported technical claims
 
-## 9. Copy-Risk Guardrail
+## 11. Copy-Risk Guardrail
 
 The engine uses deterministic copy-risk scoring before approval.
 
@@ -291,7 +326,7 @@ Default thresholds:
 
 If triggered, critique must treat the draft as revision-worthy.
 
-## 10. Model Split
+## 12. Model Split
 
 ### Fast model
 
@@ -313,7 +348,7 @@ Used for:
 - first draft writing
 - rewrite after critique
 
-## 11. Current Routes
+## 13. Current Routes
 
 - `/ingest`
   - candidate workspace
@@ -336,7 +371,9 @@ Used for:
 - `/generate/history/[id]`
   - immutable saved run detail
 
-## 12. Contributor Rules
+There is no legacy pair detail route anymore.
+
+## 14. Contributor Rules
 
 When working in this repo:
 
@@ -347,8 +384,9 @@ When working in this repo:
 5. Preserve evidence-grounded writing rules.
 6. Preserve deterministic copy-risk checks.
 7. Keep saved generation runs immutable.
+8. Do not introduce new product logic that depends on `historical_cases.source`; it exists only for compatibility with older local data.
 
-## 13. Deferred Feature
+## 15. Deferred Feature
 
 Multi-draft generation plus final ranking is intentionally deferred.
 

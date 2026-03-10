@@ -18,12 +18,13 @@ export default function GenerateHistoryDetailPage() {
   const run = useQuery(api.runs.getGenerationRun, { id }) as GenerationSnapshotData | null | undefined;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background to-muted/30">
-      <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+    <main className="min-h-[calc(100vh-52px)]">
+      <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 animate-fade-in">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Saved Run Detail</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="section-label">Run Snapshot</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Saved Run Detail</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               Immutable generation snapshot with saved retrieval context and evaluator trace.
             </p>
           </div>
@@ -39,13 +40,13 @@ export default function GenerateHistoryDetailPage() {
 
         {run === undefined ? (
           <div className="flex h-64 items-center justify-center">
-            <div className="flex flex-col items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-8 w-8 animate-spin" />
-              <p>Loading saved run...</p>
+            <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
+              <p className="text-sm">Loading saved run...</p>
             </div>
           </div>
         ) : run === null ? (
-          <div className="rounded-lg border border-dashed p-8 text-center bg-card">
+          <div className="glass-card p-8 text-center">
             <p className="font-medium text-destructive">Saved run not found.</p>
             <p className="mt-1 text-sm text-muted-foreground">
               This generation snapshot may have been removed or never existed.

@@ -65,12 +65,13 @@ export default function GenerateHistoryPage() {
   ) as GenerationHistoryListItem[] | undefined;
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background to-muted/30">
-      <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+    <main className="min-h-[calc(100vh-52px)]">
+      <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 animate-fade-in">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Saved Proposal Runs</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="section-label">History</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Saved Proposal Runs</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               Review immutable generation snapshots, evaluator traces, and proposal analytics.
             </p>
           </div>
@@ -133,7 +134,7 @@ export default function GenerateHistoryPage() {
                     </TableBody>
                   </Table>
                 ) : runs.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-8 text-center">
+                  <div className="glass-card p-8 text-center">
                     <p className="font-medium">No saved runs yet.</p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       Generate a proposal to create the first immutable run snapshot.
@@ -166,10 +167,10 @@ export default function GenerateHistoryPage() {
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-2">
-                              <Badge variant={run.approvalStatus === "APPROVED" ? "default" : "outline"}>
+                              <Badge variant={run.approvalStatus === "APPROVED" ? "success" : "outline"}>
                                 {run.approvalStatus}
                               </Badge>
-                              {run.copyRiskTriggered ? <Badge variant="secondary">Copy Risk</Badge> : null}
+                              {run.copyRiskTriggered ? <Badge variant="warning">Copy Risk</Badge> : null}
                             </div>
                           </TableCell>
                           <TableCell>{run.revisionCount}</TableCell>
