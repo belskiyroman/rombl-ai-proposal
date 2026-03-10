@@ -40,11 +40,6 @@ export type ExtractionResultsData =
         specificityScore: number;
         genericnessScore: number;
       } | null;
-    }
-  | {
-      operation: "backfill";
-      importedCount: number;
-      canonicalCount: number;
     };
 
 interface ExtractionResultsProps {
@@ -66,7 +61,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
       <Card className="border-0 shadow-lg">
         <CardHeader>
           <CardTitle>Candidate Profile Saved</CardTitle>
-          <CardDescription>Profile and derived evidence blocks are now available for V2 retrieval.</CardDescription>
+          <CardDescription>Profile and derived evidence blocks are now available for retrieval.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
           <MetricCard label="Candidate" value={data.candidateId} />
@@ -92,21 +87,6 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
     );
   }
 
-  if (data.operation === "backfill") {
-    return (
-      <Card className="border-0 shadow-lg">
-        <CardHeader>
-          <CardTitle>Backfill Complete</CardTitle>
-          <CardDescription>Legacy V1 data was transformed into canonical V2 case-library artifacts.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <MetricCard label="Imported Cases" value={data.importedCount} />
-          <MetricCard label="Canonical Cases" value={data.canonicalCount} />
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <Card className="border-0 shadow-lg">
@@ -114,7 +94,7 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>Historical Case Ingested</CardTitle>
-              <CardDescription>Case, cluster, fragments, and seed evidence were generated for V2.</CardDescription>
+              <CardDescription>Case, cluster, fragments, and seed evidence were generated for the live engine.</CardDescription>
             </div>
             <Badge variant={data.canonical ? "default" : "outline"}>
               {data.canonical ? "Canonical" : "Variant"}

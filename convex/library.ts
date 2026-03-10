@@ -1,6 +1,8 @@
 import { queryGeneric } from "convex/server";
 import { v } from "convex/values";
 
+import { sortClusterCases } from "../src/lib/proposal-engine/library-admin";
+
 export const listCanonicalCases = queryGeneric({
   args: {
     candidateId: v.float64(),
@@ -152,5 +154,119 @@ export const getCandidateEvidenceByIds = queryGeneric({
         active: record.active,
         source: record.source
       }));
+  }
+});
+
+export const getHistoricalCaseDetail = queryGeneric({
+  args: {
+    id: v.id("historical_cases")
+  },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.get(args.id);
+    if (!record) {
+      return null;
+    }
+
+    const [cluster, fragments, evidenceBlocks, clusterCases] = await Promise.all([
+      record.clusterId ? ctx.db.get(record.clusterId) : null,
+      ctx.db
+        .query("proposal_fragments")
+        .withIndex("by_case_id", (query) => query.eq("caseId", args.id))
+        .collect(),
+      ctx.db
+        .query("candidate_evidence_blocks")
+        .withIndex("by_source_case_id", (query) => query.eq("sourceCaseId", args.id))
+        .collect(),
+      record.clusterId
+        ? ctx.db
+            .query("historical_cases")
+            .withIndex("by_cluster_id", (query) => query.eq("clusterId", record.clusterId))
+            .collect()
+        : Promise.resolve([])
+    ]);
+
+    const sortedClusterCases = sortClusterCases(
+      clusterCases.map((item) => ({
+        _id: String(item._id),
+        candidateId: item.candidateId,
+        clusterId: item.clusterId ? String(item.clusterId) : null,
+        canonical: item.canonical,
+        jobTitle: item.jobTitle,
+        normalizedProposalText: item.normalizedProposalText,
+        proposalExtract: {
+          hook: item.proposalExtract.hook
+        },
+        quality: {
+          overall: item.quality.overall,
+          humanScore: item.quality.humanScore,
+          specificityScore: item.quality.specificityScore,
+          genericnessScore: item.quality.genericnessScore
+        },
+        outcome: item.outcome,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt
+      })),
+      cluster?.representativeCaseId ? String(cluster.representativeCaseId) : String(record._id)
+    );
+
+    return {
+      _id: String(record._id),
+      candidateId: record.candidateId,
+      clusterId: record.clusterId ? String(record.clusterId) : null,
+      canonical: record.canonical,
+      jobTitle: record.jobTitle,
+      rawJobDescription: record.rawJobDescription,
+      rawProposalText: record.rawProposalText,
+      normalizedJobDescription: record.normalizedJobDescription,
+      normalizedProposalText: record.normalizedProposalText,
+      domain: record.domain,
+      projectType: record.projectType,
+      jobExtract: record.jobExtract,
+      proposalExtract: record.proposalExtract,
+      quality: record.quality,
+      outcome: record.outcome,
+      cluster: cluster
+        ? {
+            _id: String(cluster._id),
+            clusterSize: cluster.clusterSize,
+            qualityScore: cluster.qualityScore,
+            duplicateMethod: cluster.duplicateMethod,
+            representativeCaseId: cluster.representativeCaseId ? String(cluster.representativeCaseId) : null
+          }
+        : null,
+      clusterCases: sortedClusterCases.map((item) => ({
+        _id: item._id,
+        canonical: item.canonical,
+        jobTitle: item.jobTitle,
+        hook: item.proposalExtract.hook,
+        overallQuality: item.quality.overall,
+        outcome: item.outcome,
+        updatedAt: item.updatedAt
+      })),
+      fragments: fragments
+        .sort((left, right) => left.fragmentType.localeCompare(right.fragmentType) || left.createdAt - right.createdAt)
+        .map((fragment) => ({
+          _id: String(fragment._id),
+          fragmentType: fragment.fragmentType,
+          text: fragment.text,
+          tags: fragment.tags,
+          qualityScore: fragment.qualityScore,
+          retrievalEligible: fragment.retrievalEligible
+        })),
+      evidenceBlocks: evidenceBlocks
+        .sort((left, right) => right.confidence - left.confidence)
+        .map((block) => ({
+          _id: String(block._id),
+          type: block.type,
+          text: block.text,
+          tags: block.tags,
+          confidence: block.confidence,
+          active: block.active,
+          techStack: block.structured.techStack,
+          domains: block.structured.domains
+        })),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    };
   }
 });

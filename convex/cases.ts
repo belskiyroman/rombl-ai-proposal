@@ -6,26 +6,28 @@ import {
   buildCaseQualityPrompt,
   buildJobExtractPrompt,
   buildProposalExtractPrompt,
-  createProposalEngineV2Runners
-} from "../src/lib/ai/v2/agents";
+  createProposalEngineRunners
+} from "../src/lib/proposal-engine/agents";
 import {
   createProposalFragments,
   decideClusterForProposal,
   deriveSeedEvidenceBlocks,
   normalizeHistoricalCase
-} from "../src/lib/ai/v2/offline";
+} from "../src/lib/proposal-engine/offline";
+import {
+  computeClusterQualityScore,
+  selectRepresentativeCase
+} from "../src/lib/proposal-engine/library-admin";
 import {
   historicalCaseInputSchema,
-  type CandidateProfileInput,
   type HistoricalCaseInput
-} from "../src/lib/ai/v2/schemas";
-import { buildNeedsVectorText } from "../src/lib/ai/v2/service";
-import { qualitySelectionScore } from "../src/lib/ai/v2/similarity";
+} from "../src/lib/proposal-engine/schemas";
+import { buildNeedsVectorText } from "../src/lib/proposal-engine/service";
+import { qualitySelectionScore } from "../src/lib/proposal-engine/similarity";
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
-const caseSourceValidator = v.union(v.literal("manual"), v.literal("backfill"));
 const toneProfileValidator = v.union(
   v.literal("concise"),
   v.literal("consultative"),
@@ -45,7 +47,6 @@ const fragmentTypeValidator = v.union(v.literal("opening"), v.literal("proof"), 
 
 const historicalCaseDocumentValidator = v.object({
   candidateId: v.float64(),
-  source: caseSourceValidator,
   jobTitle: v.string(),
   rawJobDescription: v.string(),
   rawProposalText: v.string(),
@@ -103,9 +104,6 @@ const historicalCaseDocumentValidator = v.object({
   rawJobEmbedding: v.array(v.float64()),
   jobSummaryEmbedding: v.array(v.float64()),
   needsEmbedding: v.array(v.float64()),
-  legacyRawJobId: v.optional(v.string()),
-  legacyProcessedProposalId: v.optional(v.string()),
-  legacyStyleProfileId: v.optional(v.string()),
   createdAt: v.float64(),
   updatedAt: v.float64()
 });
@@ -197,70 +195,94 @@ export const getCanonicalCasesForCandidate = queryGeneric({
   }
 });
 
-export const getHistoricalCaseByLegacyProcessedProposalId = queryGeneric({
+export const getHistoricalCaseAdminRecord = queryGeneric({
   args: {
-    legacyProcessedProposalId: v.string()
+    historicalCaseId: v.id("historical_cases")
   },
   handler: async (ctx, args) => {
-    const existingCases = await ctx.db
-      .query("historical_cases")
-      .withIndex("by_created_at")
-      .collect();
+    const record = await ctx.db.get(args.historicalCaseId);
+    if (!record) {
+      return null;
+    }
 
-    const match = existingCases.find(
-      (record) => record.legacyProcessedProposalId === args.legacyProcessedProposalId
-    );
-
-    return match ? { _id: String(match._id), canonical: match.canonical } : null;
+    return {
+      _id: String(record._id),
+      candidateId: record.candidateId,
+      jobTitle: record.jobTitle,
+      rawJobDescription: record.rawJobDescription,
+      rawProposalText: record.rawProposalText,
+      normalizedProposalText: record.normalizedProposalText,
+      clusterId: record.clusterId ? String(record.clusterId) : null,
+      canonical: record.canonical,
+      proposalExtract: {
+        hook: record.proposalExtract.hook
+      },
+      quality: {
+        overall: record.quality.overall,
+        humanScore: record.quality.humanScore,
+        specificityScore: record.quality.specificityScore,
+        genericnessScore: record.quality.genericnessScore
+      },
+      outcome: record.outcome,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    };
   }
 });
 
-export const getBackfillSourceRecords = queryGeneric({
+export const getProposalClusterRecord = queryGeneric({
   args: {
-    limit: v.optional(v.number())
+    clusterId: v.id("proposal_clusters")
   },
   handler: async (ctx, args) => {
-    const limit = Math.max(1, Math.min(args.limit ?? 200, 1000));
-    const processedProposals = await ctx.db
-      .query("processed_proposals")
-      .withIndex("by_created_at")
-      .order("asc")
-      .take(limit);
+    const cluster = await ctx.db.get(args.clusterId);
+    if (!cluster) {
+      return null;
+    }
 
-    const rawJobs = await Promise.all(processedProposals.map((proposal) => ctx.db.get(proposal.rawJobId)));
-    const styleProfiles = await Promise.all(processedProposals.map((proposal) => ctx.db.get(proposal.styleProfileId)));
+    return {
+      _id: String(cluster._id),
+      candidateId: cluster.candidateId,
+      representativeCaseId: cluster.representativeCaseId ? String(cluster.representativeCaseId) : null,
+      clusterSize: cluster.clusterSize,
+      centroidFingerprint: cluster.centroidFingerprint,
+      qualityScore: cluster.qualityScore,
+      duplicateMethod: cluster.duplicateMethod,
+      updatedAt: cluster.updatedAt
+    };
+  }
+});
 
-    return processedProposals
-      .map((proposal, index) => {
-        const rawJob = rawJobs[index];
-        const styleProfile = styleProfiles[index];
-        if (!rawJob || !styleProfile) {
-          return null;
-        }
+export const getClusterCaseRecords = queryGeneric({
+  args: {
+    clusterId: v.id("proposal_clusters")
+  },
+  handler: async (ctx, args) => {
+    const records = await ctx.db
+      .query("historical_cases")
+      .withIndex("by_cluster_id", (query) => query.eq("clusterId", args.clusterId))
+      .collect();
 
-        return {
-          processedProposalId: String(proposal._id),
-          rawJobId: String(rawJob._id),
-          styleProfileId: String(styleProfile._id),
-          candidateId: proposal.memberId,
-          memberName: styleProfile.memberName,
-          memberLocation: styleProfile.memberLocation,
-          talentBadge: styleProfile.talentBadge,
-          jobTitle: rawJob.title,
-          jobDescription: rawJob.text,
-          proposalText: proposal.text,
-          outcome: {
-            reply: proposal.viewed,
-            interview: proposal.interview,
-            hired: proposal.offer
-          },
-          styleHints: {
-            keyVocabulary: styleProfile.keyVocabulary,
-            sentenceStructure: styleProfile.sentenceStructure
-          }
-        };
-      })
-      .filter((record): record is NonNullable<typeof record> => record !== null);
+    return records.map((record) => ({
+      _id: String(record._id),
+      candidateId: record.candidateId,
+      clusterId: record.clusterId ? String(record.clusterId) : null,
+      canonical: record.canonical,
+      jobTitle: record.jobTitle,
+      normalizedProposalText: record.normalizedProposalText,
+      proposalExtract: {
+        hook: record.proposalExtract.hook
+      },
+      quality: {
+        overall: record.quality.overall,
+        humanScore: record.quality.humanScore,
+        specificityScore: record.quality.specificityScore,
+        genericnessScore: record.quality.genericnessScore
+      },
+      outcome: record.outcome,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    }));
   }
 });
 
@@ -392,21 +414,294 @@ export const updateCaseEvidenceActiveByCaseId = internalMutationGeneric({
   }
 });
 
+export const deleteProposalClusterRecord = internalMutationGeneric({
+  args: {
+    clusterId: v.id("proposal_clusters")
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.clusterId);
+    return args.clusterId;
+  }
+});
+
+export const deleteHistoricalCaseRecord = internalMutationGeneric({
+  args: {
+    caseId: v.id("historical_cases")
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.caseId);
+    return args.caseId;
+  }
+});
+
+export const deleteProposalFragmentsByCaseId = internalMutationGeneric({
+  args: {
+    caseId: v.id("historical_cases")
+  },
+  handler: async (ctx, args) => {
+    const fragments = await ctx.db
+      .query("proposal_fragments")
+      .withIndex("by_case_id", (query) => query.eq("caseId", args.caseId))
+      .collect();
+
+    for (const fragment of fragments) {
+      await ctx.db.delete(fragment._id);
+    }
+
+    return fragments.length;
+  }
+});
+
+export const deleteCaseEvidenceBlocksByCaseId = internalMutationGeneric({
+  args: {
+    caseId: v.id("historical_cases")
+  },
+  handler: async (ctx, args) => {
+    const evidenceBlocks = await ctx.db
+      .query("candidate_evidence_blocks")
+      .withIndex("by_source_case_id", (query) => query.eq("sourceCaseId", args.caseId))
+      .collect();
+
+    for (const block of evidenceBlocks) {
+      await ctx.db.delete(block._id);
+    }
+
+    return evidenceBlocks.length;
+  }
+});
+
 type CasesActionCtx = ActionCtx;
 
-async function ensureCandidateProfile(ctx: CasesActionCtx, profile: CandidateProfileInput) {
-  const createdAt = Date.now();
+async function reconcileProposalCluster(
+  ctx: CasesActionCtx,
+  clusterId: Id<"proposal_clusters">,
+  updatedAt: number
+) {
+  const clusterCases = (await ctx.runQuery(anyApi.cases.getClusterCaseRecords, {
+    clusterId
+  })) as Array<{
+    _id: string;
+    candidateId: number;
+    clusterId: string | null;
+    canonical: boolean;
+    jobTitle: string;
+    normalizedProposalText: string;
+    proposalExtract: {
+      hook: string;
+    };
+    quality: {
+      overall: number;
+      humanScore: number;
+      specificityScore: number;
+      genericnessScore: number;
+    };
+    outcome?: {
+      reply?: boolean;
+      interview?: boolean;
+      hired?: boolean;
+    };
+    createdAt: number;
+    updatedAt: number;
+  }>;
 
-  return ctx.runMutation(
-    internal.profiles.upsertCandidateProfileRecord,
-    {
-      document: {
-        ...profile,
-        createdAt,
-        updatedAt: createdAt
+  if (clusterCases.length === 0) {
+    await ctx.runMutation(internal.cases.deleteProposalClusterRecord, {
+      clusterId
+    });
+
+    return {
+      deleted: true,
+      representativeCaseId: null
+    };
+  }
+
+  const representative = selectRepresentativeCase(clusterCases);
+  if (!representative) {
+    await ctx.runMutation(internal.cases.deleteProposalClusterRecord, {
+      clusterId
+    });
+
+    return {
+      deleted: true,
+      representativeCaseId: null
+    };
+  }
+
+  await Promise.all(
+    clusterCases.map(async (caseRecord) => {
+      const isRepresentative = caseRecord._id === representative._id;
+
+      if (caseRecord.canonical !== isRepresentative) {
+        await ctx.runMutation(internal.cases.updateHistoricalCaseCanonical, {
+          caseId: caseRecord._id as Id<"historical_cases">,
+          canonical: isRepresentative,
+          updatedAt
+        });
       }
-    }
+
+      await Promise.all([
+        ctx.runMutation(internal.cases.updateProposalFragmentsEligibilityByCaseId, {
+          caseId: caseRecord._id as Id<"historical_cases">,
+          retrievalEligible: isRepresentative,
+          updatedAt
+        }),
+        ctx.runMutation(internal.cases.updateCaseEvidenceActiveByCaseId, {
+          caseId: caseRecord._id as Id<"historical_cases">,
+          active: isRepresentative,
+          updatedAt
+        })
+      ]);
+    })
   );
+
+  const currentCluster = await ctx.runQuery(anyApi.cases.getProposalClusterRecord, {
+    clusterId
+  }) as {
+    duplicateMethod: string;
+  } | null;
+
+  await ctx.runMutation(internal.cases.updateProposalClusterRecord, {
+    clusterId,
+    patch: {
+      representativeCaseId: representative._id as Id<"historical_cases">,
+      clusterSize: clusterCases.length,
+      centroidFingerprint: representative.normalizedProposalText.slice(0, 500),
+      qualityScore: computeClusterQualityScore(representative),
+      duplicateMethod: currentCluster?.duplicateMethod ?? (clusterCases.length > 1 ? "near_duplicate" : "new_cluster"),
+      updatedAt
+    }
+  });
+
+  return {
+    deleted: false,
+    representativeCaseId: representative._id
+  };
+}
+
+async function setClusterRepresentative(
+  ctx: CasesActionCtx,
+  clusterId: Id<"proposal_clusters">,
+  representativeCaseId: Id<"historical_cases">,
+  updatedAt: number
+) {
+  const clusterCases = (await ctx.runQuery(anyApi.cases.getClusterCaseRecords, {
+    clusterId
+  })) as Array<{
+    _id: string;
+    candidateId: number;
+    clusterId: string | null;
+    canonical: boolean;
+    jobTitle: string;
+    normalizedProposalText: string;
+    proposalExtract: {
+      hook: string;
+    };
+    quality: {
+      overall: number;
+      humanScore: number;
+      specificityScore: number;
+      genericnessScore: number;
+    };
+    outcome?: {
+      reply?: boolean;
+      interview?: boolean;
+      hired?: boolean;
+    };
+    createdAt: number;
+    updatedAt: number;
+  }>;
+
+  const representative = clusterCases.find((record) => record._id === String(representativeCaseId));
+  if (!representative) {
+    throw new Error("Representative case not found in cluster.");
+  }
+
+  await Promise.all(
+    clusterCases.map((caseRecord) =>
+      Promise.all([
+        ctx.runMutation(internal.cases.updateHistoricalCaseCanonical, {
+          caseId: caseRecord._id as Id<"historical_cases">,
+          canonical: caseRecord._id === representative._id,
+          updatedAt
+        }),
+        ctx.runMutation(internal.cases.updateProposalFragmentsEligibilityByCaseId, {
+          caseId: caseRecord._id as Id<"historical_cases">,
+          retrievalEligible: caseRecord._id === representative._id,
+          updatedAt
+        }),
+        ctx.runMutation(internal.cases.updateCaseEvidenceActiveByCaseId, {
+          caseId: caseRecord._id as Id<"historical_cases">,
+          active: caseRecord._id === representative._id,
+          updatedAt
+        })
+      ])
+    )
+  );
+
+  const currentCluster = await ctx.runQuery(anyApi.cases.getProposalClusterRecord, {
+    clusterId
+  }) as {
+    duplicateMethod: string;
+  } | null;
+
+  await ctx.runMutation(internal.cases.updateProposalClusterRecord, {
+    clusterId,
+    patch: {
+      representativeCaseId,
+      clusterSize: clusterCases.length,
+      centroidFingerprint: representative.normalizedProposalText.slice(0, 500),
+      qualityScore: computeClusterQualityScore(representative),
+      duplicateMethod: currentCluster?.duplicateMethod ?? (clusterCases.length > 1 ? "near_duplicate" : "new_cluster"),
+      updatedAt
+    }
+  });
+
+  return {
+    representativeCaseId: representative._id
+  };
+}
+
+async function deleteHistoricalCaseCore(
+  ctx: CasesActionCtx,
+  caseRecord: {
+    _id: string;
+    clusterId: string | null;
+    candidateId: number;
+  },
+  updatedAt: number
+) {
+  const caseId = caseRecord._id as Id<"historical_cases">;
+
+  await Promise.all([
+    ctx.runMutation(internal.cases.deleteProposalFragmentsByCaseId, {
+      caseId
+    }),
+    ctx.runMutation(internal.cases.deleteCaseEvidenceBlocksByCaseId, {
+      caseId
+    })
+  ]);
+
+  await ctx.runMutation(internal.cases.deleteHistoricalCaseRecord, {
+    caseId
+  });
+
+  if (!caseRecord.clusterId) {
+    return {
+      clusterDeleted: false,
+      representativeCaseId: null
+    };
+  }
+
+  const reconciled = await reconcileProposalCluster(
+    ctx,
+    caseRecord.clusterId as Id<"proposal_clusters">,
+    updatedAt
+  );
+
+  return {
+    clusterDeleted: reconciled.deleted,
+    representativeCaseId: reconciled.representativeCaseId
+  };
 }
 
 async function ingestHistoricalCaseCore(
@@ -417,27 +712,8 @@ async function ingestHistoricalCaseCore(
     reasoningModel?: string;
   }
 ) {
-  if (args.source === "backfill" && args.legacyProcessedProposalId) {
-    const existing = (await ctx.runQuery(anyApi.cases.getHistoricalCaseByLegacyProcessedProposalId, {
-      legacyProcessedProposalId: args.legacyProcessedProposalId
-    })) as { _id: string; canonical: boolean } | null;
-
-    if (existing) {
-      return {
-        historicalCaseId: existing._id,
-        clusterId: null,
-        canonical: existing.canonical,
-        fragmentIds: [],
-        evidenceIds: [],
-        jobExtract: null,
-        proposalExtract: null,
-        quality: null
-      };
-    }
-  }
-
   const createdAt = Date.now();
-  const runners = createProposalEngineV2Runners({
+  const runners = createProposalEngineRunners({
     fastModel: args.fastModel,
     reasoningModel: args.reasoningModel
   });
@@ -532,7 +808,6 @@ async function ingestHistoricalCaseCore(
     {
       document: {
         candidateId: args.candidateId,
-        source: args.source,
         jobTitle: args.jobTitle,
         rawJobDescription: args.jobDescription,
         rawProposalText: args.proposalText,
@@ -549,9 +824,6 @@ async function ingestHistoricalCaseCore(
         rawJobEmbedding,
         jobSummaryEmbedding,
         needsEmbedding,
-        legacyRawJobId: args.legacyRawJobId,
-        legacyProcessedProposalId: args.legacyProcessedProposalId,
-        legacyStyleProfileId: args.legacyStyleProfileId,
         createdAt,
         updatedAt: createdAt
       }
@@ -670,7 +942,6 @@ async function ingestHistoricalCaseCore(
 export const ingestHistoricalCase = actionGeneric({
   args: {
     candidateId: v.float64(),
-    source: v.optional(caseSourceValidator),
     jobTitle: v.string(),
     jobDescription: v.string(),
     proposalText: v.string(),
@@ -681,9 +952,6 @@ export const ingestHistoricalCase = actionGeneric({
         hired: v.optional(v.boolean())
       })
     ),
-    legacyRawJobId: v.optional(v.string()),
-    legacyProcessedProposalId: v.optional(v.string()),
-    legacyStyleProfileId: v.optional(v.string()),
     embeddingModel: v.optional(v.string()),
     fastModel: v.optional(v.string()),
     reasoningModel: v.optional(v.string())
@@ -691,14 +959,10 @@ export const ingestHistoricalCase = actionGeneric({
   handler: async (ctx, args) => {
     const parsed = historicalCaseInputSchema.parse({
       candidateId: args.candidateId,
-      source: args.source ?? "manual",
       jobTitle: args.jobTitle,
       jobDescription: args.jobDescription,
       proposalText: args.proposalText,
-      outcome: args.outcome ?? {},
-      legacyRawJobId: args.legacyRawJobId,
-      legacyProcessedProposalId: args.legacyProcessedProposalId,
-      legacyStyleProfileId: args.legacyStyleProfileId
+      outcome: args.outcome ?? {}
     } satisfies HistoricalCaseInput);
 
     const profile = await (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
@@ -720,75 +984,125 @@ export const ingestHistoricalCase = actionGeneric({
   }
 });
 
-export const backfillFromV1 = actionGeneric({
+export const updateHistoricalCase = actionGeneric({
   args: {
-    limit: v.optional(v.number()),
+    historicalCaseId: v.id("historical_cases"),
+    jobTitle: v.string(),
+    jobDescription: v.string(),
+    proposalText: v.string(),
+    outcome: v.optional(
+      v.object({
+        reply: v.optional(v.boolean()),
+        interview: v.optional(v.boolean()),
+        hired: v.optional(v.boolean())
+      })
+    ),
     embeddingModel: v.optional(v.string()),
     fastModel: v.optional(v.string()),
     reasoningModel: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const records = await (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<Array<{
-      processedProposalId: string;
-      rawJobId: string;
-      styleProfileId: string;
+    const existing = await (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
+      _id: string;
       candidateId: number;
-      memberName: string;
-      memberLocation: string;
-      talentBadge?: string;
-      jobTitle: string;
-      jobDescription: string;
-      proposalText: string;
-      outcome: {
-        reply?: boolean;
-        interview?: boolean;
-        hired?: boolean;
-      };
-      styleHints: {
-        keyVocabulary: string[];
-        sentenceStructure: string;
-      };
-    }>>) (anyApi.cases.getBackfillSourceRecords, {
-      limit: args.limit
+      clusterId: string | null;
+    } | null>)(anyApi.cases.getHistoricalCaseAdminRecord, {
+      historicalCaseId: args.historicalCaseId
     });
 
-    const results = [];
-
-    for (const record of records) {
-      await ensureCandidateProfile(ctx, {
-        candidateId: record.candidateId,
-        displayName: record.memberName || `Candidate #${record.candidateId}`,
-        positioningSummary: `Experienced freelancer with ${record.styleHints.keyVocabulary.slice(0, 5).join(", ")} and ${record.styleHints.sentenceStructure} communication style.`,
-        toneProfile: "consultative",
-        coreDomains: [record.memberLocation || "Global"],
-        preferredCtaStyle: "Short confident CTA with clear next step.",
-        metadata: {
-          seniority: record.talentBadge,
-          location: record.memberLocation
-        }
-      });
-
-      results.push(
-        await ingestHistoricalCaseCore(ctx, {
-          candidateId: record.candidateId,
-          source: "backfill",
-          jobTitle: record.jobTitle,
-          jobDescription: record.jobDescription,
-          proposalText: record.proposalText,
-          outcome: record.outcome,
-          legacyRawJobId: record.rawJobId,
-          legacyProcessedProposalId: record.processedProposalId,
-          legacyStyleProfileId: record.styleProfileId,
-          embeddingModel: args.embeddingModel,
-          fastModel: args.fastModel,
-          reasoningModel: args.reasoningModel
-        })
-      );
+    if (!existing) {
+      throw new Error("Historical case not found.");
     }
 
+    const result = await ingestHistoricalCaseCore(ctx, {
+      candidateId: existing.candidateId,
+      jobTitle: args.jobTitle,
+      jobDescription: args.jobDescription,
+      proposalText: args.proposalText,
+      outcome: args.outcome ?? {},
+      embeddingModel: args.embeddingModel,
+      fastModel: args.fastModel,
+      reasoningModel: args.reasoningModel
+    });
+
+    const updatedAt = Date.now();
+    await deleteHistoricalCaseCore(ctx, existing, updatedAt);
+
     return {
-      importedCount: results.length,
-      canonicalCount: results.filter((result) => result.canonical).length
+      previousHistoricalCaseId: existing._id,
+      ...result
+    };
+  }
+});
+
+export const deleteHistoricalCase = actionGeneric({
+  args: {
+    historicalCaseId: v.id("historical_cases")
+  },
+  handler: async (ctx, args) => {
+    const existing = await (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
+      _id: string;
+      clusterId: string | null;
+      candidateId: number;
+    } | null>)(anyApi.cases.getHistoricalCaseAdminRecord, {
+      historicalCaseId: args.historicalCaseId
+    });
+
+    if (!existing) {
+      throw new Error("Historical case not found.");
+    }
+
+    const updatedAt = Date.now();
+    const result = await deleteHistoricalCaseCore(ctx, existing, updatedAt);
+
+    return {
+      deletedHistoricalCaseId: existing._id,
+      candidateId: existing.candidateId,
+      clusterId: existing.clusterId,
+      ...result
+    };
+  }
+});
+
+export const promoteHistoricalCase = actionGeneric({
+  args: {
+    historicalCaseId: v.id("historical_cases")
+  },
+  handler: async (ctx, args) => {
+    const existing = await (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
+      _id: string;
+      clusterId: string | null;
+      candidateId: number;
+    } | null>)(anyApi.cases.getHistoricalCaseAdminRecord, {
+      historicalCaseId: args.historicalCaseId
+    });
+
+    if (!existing) {
+      throw new Error("Historical case not found.");
+    }
+
+    if (!existing.clusterId) {
+      return {
+        historicalCaseId: existing._id,
+        candidateId: existing.candidateId,
+        clusterId: null,
+        representativeCaseId: existing._id
+      };
+    }
+
+    const updatedAt = Date.now();
+    const result = await setClusterRepresentative(
+      ctx,
+      existing.clusterId as Id<"proposal_clusters">,
+      args.historicalCaseId,
+      updatedAt
+    );
+
+    return {
+      historicalCaseId: existing._id,
+      candidateId: existing.candidateId,
+      clusterId: existing.clusterId,
+      representativeCaseId: result.representativeCaseId
     };
   }
 });

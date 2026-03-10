@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { api } from "@/convex/_generated/api";
+import type { GenerationSnapshotData } from "@/src/lib/generation-snapshot";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -33,82 +34,8 @@ interface CandidateProfileOption {
   updatedAt: number;
 }
 
-export interface GeneratedProposalData {
-  generationRunId: string;
-  finalProposal: string;
-  approvalStatus: "APPROVED" | "NEEDS_REVISION";
-  critiqueHistory: Array<{
-    issues: string[];
-    revisionInstructions: string[];
-    approvalStatus: "APPROVED" | "NEEDS_REVISION";
-    rubric: {
-      relevance: number;
-      specificity: number;
-      credibility: number;
-      tone: number;
-      clarity: number;
-      ctaStrength: number;
-    };
-    copyRisk: {
-      triggered: boolean;
-      maxParagraphCosine: number;
-      trigramOverlap: number;
-      reasons: string[];
-    };
-  }>;
-  executionTrace: string[];
-  selectedEvidence: Array<{
-    id: string;
-    reason: string;
-    text: string;
-    type: string;
-  }>;
-  retrievedContext: {
-    similarCases: Array<{
-      _id: string;
-      jobTitle: string;
-      jobExtract: { summary: string };
-      proposalExtract: { hook: string; tone: string };
-      finalScore?: number;
-    }>;
-    fragments: {
-      openings: Array<{ _id: string; text: string }>;
-      proofs: Array<{ _id: string; text: string }>;
-      closings: Array<{ _id: string; text: string }>;
-    };
-    evidenceCandidates: Array<{ _id: string; text: string; type: string }>;
-  };
-  jobUnderstanding: {
-    jobSummary: string;
-    clientNeeds: string[];
-    mustHaveSkills: string[];
-    niceToHaveSkills: string[];
-    projectRiskFlags: string[];
-    proposalStrategy: {
-      tone: string;
-      length: string;
-      focus: string[];
-    };
-  };
-  proposalPlan: {
-    openingAngle: string;
-    mainPoints: string[];
-    selectedEvidenceIds: string[];
-    selectedFragmentIds: string[];
-    avoid: string[];
-    ctaStyle: string;
-  };
-  draftHistory: string[];
-  copyRisk: {
-    triggered: boolean;
-    maxParagraphCosine: number;
-    trigramOverlap: number;
-    reasons: string[];
-  } | null;
-}
-
 interface GenerationFormProps {
-  onGenerated: (result: GeneratedProposalData) => void;
+  onGenerated: (result: GenerationSnapshotData) => void;
 }
 
 const defaultValues: GenerationFormValues = {
@@ -119,7 +46,7 @@ const defaultValues: GenerationFormValues = {
 
 export function GenerationForm({ onGenerated }: GenerationFormProps) {
   const { toast } = useToast();
-  const createProposalV2 = useAction(api.generate.createProposalV2);
+  const createProposal = useAction(api.generate.createProposal);
   const candidates = (useQuery(api.profiles.listCandidateProfiles) as CandidateProfileOption[] | undefined) ?? [];
 
   const form = useForm<GenerationFormValues>({
@@ -131,7 +58,7 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
 
   async function onSubmit(values: GenerationFormValues) {
     try {
-      const generated = await createProposalV2({
+      const generated = await createProposal({
         candidateId: values.candidateId,
         jobInput: {
           title: values.title || undefined,
@@ -161,7 +88,7 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
     <Card className="border-0 shadow-lg">
       <CardHeader className="space-y-4">
         <div>
-          <CardTitle className="text-xl">Generate Proposal V2</CardTitle>
+          <CardTitle className="text-xl">Generate Proposal</CardTitle>
           <CardDescription>
             Run job understanding, structured retrieval, evidence selection, planning, generation, and critique.
           </CardDescription>

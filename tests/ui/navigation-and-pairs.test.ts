@@ -13,18 +13,19 @@ function fileExists(relativePath: string): boolean {
 }
 
 describe("global navigation layout", () => {
-  it("adds the V2 library, ingest, and generate routes to navigation", () => {
+  it("adds the library, candidate, and generate routes to navigation", () => {
     expect(fileExists("app/layout.tsx")).toBe(true);
     expect(fileExists("src/components/MainNavigation.tsx")).toBe(true);
 
     const layoutSource = readFile("app/layout.tsx");
     const navSource = readFile("src/components/MainNavigation.tsx");
 
-    expect(layoutSource).toContain("Structured Proposal Engine V2");
+    expect(layoutSource).toContain("Structured Proposal Engine");
     expect(navSource).toContain('"/pairs"');
     expect(navSource).toContain('"/ingest"');
     expect(navSource).toContain('"/generate"');
     expect(navSource).toContain("Library");
+    expect(navSource).toContain("Candidates");
     expect(navSource).toContain("Generate");
   });
 });
@@ -35,16 +36,20 @@ describe("library UI foundation", () => {
     expect(fileExists("src/components/ui/skeleton.tsx")).toBe(true);
   });
 
-  it("implements the canonical library page with V2 queries and cluster review", () => {
+  it("implements the canonical library page with CRUD-oriented management", () => {
     expect(fileExists("app/pairs/page.tsx")).toBe(true);
     const source = readFile("app/pairs/page.tsx");
 
     expect(source).toContain("api.profiles.listCandidateProfiles");
     expect(source).toContain("api.library.listCanonicalCases");
     expect(source).toContain("api.library.listClusters");
+    expect(source).toContain("api.library.getHistoricalCaseDetail");
+    expect(source).toContain("api.cases.deleteHistoricalCase");
     expect(source).toContain("Canonical Cases");
     expect(source).toContain("Duplicate Clusters");
-    expect(source).toContain("<Table");
+    expect(source).toContain("New Historical Case");
+    expect(source).toContain("Edit");
+    expect(source).toContain("Delete");
     expect(source).toContain("<Badge");
   });
 

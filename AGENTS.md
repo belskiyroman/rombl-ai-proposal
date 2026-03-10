@@ -1,6 +1,6 @@
-# Structured Proposal Engine V2
+# Structured Proposal Engine
 
-This file is the source-of-truth architecture note for the current project. It replaces the earlier V1 mental model built around style-profile retrieval and direct proposal few-shoting.
+This file is the source-of-truth architecture note for the current project.
 
 ## 1. Product Goal
 
@@ -8,7 +8,7 @@ The system generates grounded freelance proposals from three controlled inputs:
 
 - structured understanding of the new job
 - atomic candidate evidence blocks
-- curated reusable patterns from a cleaned, deduplicated historical case library
+- curated reusable patterns from a deduplicated historical case library
 
 The goal is not to copy past proposals. The goal is to reuse high-signal patterns and factual evidence while avoiding fabrication, generic filler, and near-duplicate output.
 
@@ -21,15 +21,13 @@ The goal is not to copy past proposals. The goal is to reuse high-signal pattern
 - Zod for structured contracts
 - Vitest for tests
 
-The stack remains the same. The architecture inside the stack is now V2.
-
 ## 3. Core Data Model
 
-### Candidate profile layer
+### Candidate layer
 
 - `candidate_profiles`
   - canonical candidate identity and positioning
-  - `candidateId`, `displayName`, `positioningSummary`, `toneProfile`, `coreDomains`, `preferredCtaStyle`, metadata
+  - stores `candidateId`, `displayName`, `positioningSummary`, `toneProfile`, `coreDomains`, `preferredCtaStyle`, and metadata
 
 - `candidate_evidence_blocks`
   - atomic, grounded fact units used during generation
@@ -40,7 +38,7 @@ The stack remains the same. The architecture inside the stack is now V2.
 ### Historical case library
 
 - `historical_cases`
-  - canonical V2 case record
+  - canonical case record
   - stores raw and normalized job/proposal text
   - stores structured `jobExtract`, `proposalExtract`, quality scores, optional outcomes, cluster membership, canonical flag
   - stores three embeddings:
@@ -58,42 +56,57 @@ The stack remains the same. The architecture inside the stack is now V2.
 
 ### Observability
 
-- `generation_runs_v2`
-  - stores the full V2 run trace:
+- `generation_runs`
+  - immutable saved generation snapshots
+  - stores:
     - job input
     - job understanding
-    - retrieved ids
     - selected evidence
     - proposal plan
+    - retrieved ids and retrieved-context snapshot
     - draft history
     - critique history
     - copy-risk result
+    - telemetry
     - final proposal
 
-### Legacy V1 tables
+There are no legacy V1 tables in the current schema.
 
-These still exist only to support backfill and migration:
+## 4. Candidate Management
 
-- `raw_jobs`
-- `style_profiles`
-- `processed_proposals`
-- `jobProposalPairs`
-- `generationRuns`
+Candidate management is handled through `convex/profiles.ts`.
 
-New features must not use them as the primary source of truth.
+### Public APIs
 
-## 4. Offline Pipeline
-
-Implemented through V2 ingestion actions and helpers.
-
-### Entry points
-
-- `cases.ingestHistoricalCase`
-- `cases.backfillFromV1`
+- `profiles.listCandidateProfiles`
+- `profiles.getNextCandidateId`
+- `profiles.getCandidateProfile`
+- `profiles.getCandidateProfileSummary`
+- `profiles.listCandidateEvidenceBlocks`
 - `profiles.upsertCandidateProfile`
 - `profiles.ingestCandidateEvidence`
+- `profiles.deleteCandidateEvidenceBlock`
+- `profiles.deleteCandidate`
 
-### Historical case processing
+### Behavior
+
+- Candidate creation and updates write to `candidate_profiles`
+- Candidate-authored evidence writes to `candidate_evidence_blocks`
+- Candidate deletion cascades through evidence, fragments, historical cases, clusters, and saved generation runs
+- The UI treats candidate selection as the workspace context; users do not manually manage separate member entities anymore
+
+## 5. Historical Case Library
+
+Historical case processing is handled through `convex/cases.ts` and `src/lib/proposal-engine/offline.ts`.
+
+### Public APIs
+
+- `cases.ingestHistoricalCase`
+- `cases.updateHistoricalCase`
+- `cases.deleteHistoricalCase`
+- `cases.promoteHistoricalCase`
+
+### Processing flow
 
 Each historical case is processed as:
 
@@ -122,21 +135,11 @@ Representative selection prefers, in order:
 3. higher specificity
 4. shorter cleaner text
 
-### Backfill
-
-`cases.backfillFromV1` migrates V1 `raw_jobs + processed_proposals + style_profiles` into:
-
-- candidate profiles
-- historical cases
-- clusters
-- fragments
-- seed evidence blocks
-
-## 5. Structured Contracts
+## 6. Structured Contracts
 
 ### Job extraction
 
-`JobExtract` must contain:
+`JobExtract` contains:
 
 - `projectType`
 - `domain`
@@ -153,7 +156,7 @@ Representative selection prefers, in order:
 
 ### Proposal extraction
 
-`ProposalExtract` must contain:
+`ProposalExtract` contains:
 
 - `hook`
 - `valueProposition`
@@ -168,7 +171,7 @@ Representative selection prefers, in order:
 
 ### Online job understanding
 
-`JobUnderstanding` must contain:
+`JobUnderstanding` contains:
 
 - `jobSummary`
 - `clientNeeds`
@@ -179,7 +182,7 @@ Representative selection prefers, in order:
 
 ### Proposal plan
 
-`ProposalPlan` must contain:
+`ProposalPlan` contains:
 
 - `openingAngle`
 - ordered `mainPoints`
@@ -190,7 +193,7 @@ Representative selection prefers, in order:
 
 ### Critique
 
-`DraftCritique` must contain:
+`DraftCritique` contains:
 
 - rubric scores for `relevance`, `specificity`, `credibility`, `tone`, `clarity`, `ctaStrength`
 - `issues`
@@ -198,9 +201,9 @@ Representative selection prefers, in order:
 - `approvalStatus`
 - `copyRisk`
 
-## 6. Retrieval Strategy
+## 7. Retrieval Strategy
 
-V2 retrieval is not a single raw-text RAG query.
+Retrieval is not a single raw-text RAG query.
 
 ### Lane A: similar canonical cases
 
@@ -234,9 +237,9 @@ V2 retrieval is not a single raw-text RAG query.
   - max `2` blocks of the same type
 - final output: exactly `4` evidence blocks
 
-## 7. Online Generation Graph
+## 8. Online Generation Graph
 
-The V2 online graph lives in `src/lib/ai/v2/graph.ts`.
+The online graph lives in `src/lib/proposal-engine/graph.ts`.
 
 ### Nodes
 
@@ -261,7 +264,7 @@ The writer may use only:
 
 - the new job input
 - selected candidate evidence
-- selected reusable fragments/patterns
+- selected reusable fragments and canonical patterns
 
 The writer must not invent:
 
@@ -272,9 +275,9 @@ The writer must not invent:
 - team size
 - unsupported technical claims
 
-## 8. Copy-Risk Guardrail
+## 9. Copy-Risk Guardrail
 
-V2 uses deterministic copy-risk scoring before approval.
+The engine uses deterministic copy-risk scoring before approval.
 
 Implemented signals:
 
@@ -288,9 +291,9 @@ Default thresholds:
 
 If triggered, critique must treat the draft as revision-worthy.
 
-## 9. Model Split
+## 10. Model Split
 
-### Small / fast model
+### Fast model
 
 Used for:
 
@@ -303,59 +306,56 @@ Used for:
 - proposal planning
 - critique
 
-### Stronger / reasoning model
+### Stronger model
 
 Used for:
 
 - first draft writing
 - rewrite after critique
 
-## 10. UI Architecture
-
-The frontend still follows shadcn/ui wrapper rules.
-
-- reusable primitives live in `src/components/ui`
-- feature components must not import Radix directly
-- forms use shadcn form wrappers + `react-hook-form` + `zodResolver`
-- toasts use `use-toast`, `toast.tsx`, and `toaster.tsx`
-- dynamic classes use `cn` from `src/lib/utils.ts`
-
-### Current routes
+## 11. Current Routes
 
 - `/ingest`
-  - V2 ingestion console
-  - candidate profile, candidate evidence, historical case ingest, V1 backfill
+  - candidate workspace
+  - create, edit, and delete candidates
+  - ingest and manage candidate-authored evidence
+  - ingest historical cases
 
 - `/pairs`
   - canonical case library
-  - duplicate cluster review
+  - create, inspect, edit, delete, and promote historical cases
+  - review duplicate clusters
 
 - `/generate`
-  - V2 generation console
-  - shows retrieved signals, selected evidence, proposal plan, evaluator trace, and final proposal
+  - proposal generation console
+  - shows retrieved signals, selected evidence, proposal plan, evaluator trace, telemetry, and final proposal
 
-## 11. Contributor Rules
+- `/generate/history`
+  - saved run history
+
+- `/generate/history/[id]`
+  - immutable saved run detail
+
+## 12. Contributor Rules
 
 When working in this repo:
 
-1. Treat V2 tables as the only write target for new functionality.
-2. Keep V1 tables read-only except for migration/backfill support.
-3. Reuse the V2 structured schemas before changing prompts or storage.
+1. Treat the current schema as the only source of truth.
+2. Do not reintroduce legacy style-profile retrieval or raw proposal RAG as a primary path.
+3. Reuse the structured proposal-engine schemas before changing prompts or storage.
 4. Preserve cluster-aware retrieval diversity.
 5. Preserve evidence-grounded writing rules.
 6. Preserve deterministic copy-risk checks.
-7. Do not reintroduce style-profile-only generation as the primary path.
+7. Keep saved generation runs immutable.
 
-## 12. Future Feature
+## 13. Deferred Feature
 
-Multi-draft generation plus final ranker is intentionally deferred.
+Multi-draft generation plus final ranking is intentionally deferred.
 
-It is a future capability, not current shipped behavior.
-
-The current V2 path is:
+The current shipped path is:
 
 - single draft
 - critique
 - up to two total passes
 
-If implementation and this document diverge, update this file to match the shipped V2 behavior.
+If implementation and this document diverge, update this file to match the shipped behavior.

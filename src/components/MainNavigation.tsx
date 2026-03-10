@@ -8,7 +8,7 @@ import { cn } from "@/src/lib/utils";
 
 const navigationItems = [
   { href: "/pairs", label: "Library" },
-  { href: "/ingest", label: "Ingest" },
+  { href: "/ingest", label: "Candidates" },
   { href: "/generate", label: "Generate" }
 ] as const;
 

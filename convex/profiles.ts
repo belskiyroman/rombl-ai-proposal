@@ -1,13 +1,13 @@
 import { actionGeneric, anyApi, internalMutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 
-import { createProposalEngineV2Runners, buildCandidateEvidencePrompt } from "../src/lib/ai/v2/agents";
+import { createProposalEngineRunners, buildCandidateEvidencePrompt } from "../src/lib/proposal-engine/agents";
 import {
   candidateEvidenceInputSchema,
   candidateProfileInputSchema,
   type CandidateEvidenceInputBlock,
   type CandidateProfileInput
-} from "../src/lib/ai/v2/schemas";
+} from "../src/lib/proposal-engine/schemas";
 import { generateEmbedding } from "../src/lib/ai/embeddings";
 import { internal } from "./_generated/api";
 
@@ -81,6 +81,53 @@ export const listCandidateProfiles = queryGeneric({
   }
 });
 
+export const getNextCandidateId = queryGeneric({
+  args: {},
+  handler: async (ctx) => {
+    const profiles = await ctx.db.query("candidate_profiles").collect();
+    const maxCandidateId = profiles.reduce((max, profile) => Math.max(max, profile.candidateId), 0);
+
+    return maxCandidateId + 1;
+  }
+});
+
+export const getCandidateProfile = queryGeneric({
+  args: {
+    candidateId: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const records = await ctx.db
+      .query("candidate_profiles")
+      .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+      .order("desc")
+      .take(1);
+
+    const profile = records[0];
+    if (!profile) {
+      return null;
+    }
+
+    const evidenceBlocks = await ctx.db
+      .query("candidate_evidence_blocks")
+      .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+      .collect();
+
+    return {
+      _id: String(profile._id),
+      candidateId: profile.candidateId,
+      displayName: profile.displayName,
+      positioningSummary: profile.positioningSummary,
+      toneProfile: profile.toneProfile,
+      coreDomains: profile.coreDomains,
+      preferredCtaStyle: profile.preferredCtaStyle,
+      metadata: profile.metadata,
+      activeEvidenceCount: evidenceBlocks.filter((block) => block.source === "candidate_profile" && block.active).length,
+      historicalEvidenceCount: evidenceBlocks.filter((block) => block.source === "case_inference").length,
+      updatedAt: profile.updatedAt
+    };
+  }
+});
+
 export const getCandidateProfileSummary = queryGeneric({
   args: {
     candidateId: v.float64()
@@ -118,6 +165,34 @@ export const getCandidateProfileSummary = queryGeneric({
         text: block.text
       }))
     };
+  }
+});
+
+export const listCandidateEvidenceBlocks = queryGeneric({
+  args: {
+    candidateId: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const blocks = await ctx.db
+      .query("candidate_evidence_blocks")
+      .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+      .collect();
+
+    return blocks
+      .filter((block) => block.source === "candidate_profile")
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .map((block) => ({
+        _id: String(block._id),
+        candidateId: block.candidateId,
+        type: block.type,
+        text: block.text,
+        tags: block.tags,
+        techStack: block.structured.techStack,
+        domains: block.structured.domains,
+        confidence: block.confidence,
+        active: block.active,
+        updatedAt: block.updatedAt
+      }));
   }
 });
 
@@ -189,6 +264,98 @@ export const insertCandidateEvidenceBlocks = internalMutationGeneric({
     }
 
     return insertedIds;
+  }
+});
+
+export const deleteCandidateEvidenceBlockRecord = internalMutationGeneric({
+  args: {
+    evidenceBlockId: v.id("candidate_evidence_blocks")
+  },
+  handler: async (ctx, args) => {
+    const block = await ctx.db.get(args.evidenceBlockId);
+    if (!block) {
+      return null;
+    }
+
+    if (block.source !== "candidate_profile") {
+      return {
+        _id: args.evidenceBlockId,
+        candidateId: block.candidateId,
+        source: block.source,
+        deleted: false
+      };
+    }
+
+    await ctx.db.delete(args.evidenceBlockId);
+
+    return {
+      _id: args.evidenceBlockId,
+      candidateId: block.candidateId,
+      source: block.source,
+      deleted: true
+    };
+  }
+});
+
+export const deleteCandidateRecordTree = internalMutationGeneric({
+  args: {
+    candidateId: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const [profiles, evidenceBlocks, fragments, cases, clusters, generationRuns] = await Promise.all([
+      ctx.db
+        .query("candidate_profiles")
+        .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+        .collect(),
+      ctx.db
+        .query("candidate_evidence_blocks")
+        .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+        .collect(),
+      ctx.db
+        .query("proposal_fragments")
+        .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+        .collect(),
+      ctx.db
+        .query("historical_cases")
+        .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+        .collect(),
+      ctx.db
+        .query("proposal_clusters")
+        .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+        .collect(),
+      ctx.db
+        .query("generation_runs")
+        .withIndex("by_candidate_id", (query) => query.eq("candidateId", args.candidateId))
+        .collect()
+    ]);
+
+    for (const run of generationRuns) {
+      await ctx.db.delete(run._id);
+    }
+    for (const fragment of fragments) {
+      await ctx.db.delete(fragment._id);
+    }
+    for (const evidenceBlock of evidenceBlocks) {
+      await ctx.db.delete(evidenceBlock._id);
+    }
+    for (const record of cases) {
+      await ctx.db.delete(record._id);
+    }
+    for (const cluster of clusters) {
+      await ctx.db.delete(cluster._id);
+    }
+    for (const profile of profiles) {
+      await ctx.db.delete(profile._id);
+    }
+
+    return {
+      deletedProfiles: profiles.length,
+      deletedEvidenceBlocks: evidenceBlocks.length,
+      deletedFragments: fragments.length,
+      deletedHistoricalCases: cases.length,
+      deletedClusters: clusters.length,
+      deletedGenerationRuns: generationRuns.length
+    };
   }
 });
 
@@ -277,7 +444,7 @@ export const upsertCandidateProfile = actionGeneric({
     } satisfies CandidateProfileInput);
 
     const createdAt = Date.now();
-    const runners = createProposalEngineV2Runners({
+    const runners = createProposalEngineRunners({
       fastModel: args.fastModel,
       reasoningModel: args.reasoningModel
     });
@@ -368,7 +535,7 @@ export const ingestCandidateEvidence = actionGeneric({
       throw new Error(`Candidate profile ${parsed.candidateId} not found.`);
     }
 
-    const runners = createProposalEngineV2Runners({
+    const runners = createProposalEngineRunners({
       fastModel: args.fastModel,
       reasoningModel: args.reasoningModel
     });
@@ -402,6 +569,66 @@ export const ingestCandidateEvidence = actionGeneric({
     return {
       candidateId: parsed.candidateId,
       evidenceCount: insertedIds.length
+    };
+  }
+});
+
+export const deleteCandidateEvidenceBlock = actionGeneric({
+  args: {
+    evidenceBlockId: v.id("candidate_evidence_blocks")
+  },
+  handler: async (ctx, args) => {
+    const deleted = await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<{
+      _id: string;
+      candidateId: number;
+      source: "candidate_profile" | "case_inference";
+      deleted: boolean;
+    } | null>)(internal.profiles.deleteCandidateEvidenceBlockRecord, args);
+
+    if (!deleted) {
+      throw new Error("Evidence block not found.");
+    }
+
+    if (!deleted.deleted || deleted.source !== "candidate_profile") {
+      throw new Error("Only candidate-authored evidence blocks can be deleted here.");
+    }
+
+    return {
+      evidenceBlockId: String(deleted._id),
+      candidateId: deleted.candidateId
+    };
+  }
+});
+
+export const deleteCandidate = actionGeneric({
+  args: {
+    candidateId: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const existingProfile = await (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
+      _id: string;
+    } | null>)(anyApi.profiles.getCandidateProfile, {
+      candidateId: args.candidateId
+    });
+
+    if (!existingProfile) {
+      throw new Error(`Candidate ${args.candidateId} not found.`);
+    }
+
+    const deleted = await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<{
+      deletedProfiles: number;
+      deletedEvidenceBlocks: number;
+      deletedFragments: number;
+      deletedHistoricalCases: number;
+      deletedClusters: number;
+      deletedGenerationRuns: number;
+    }>)(internal.profiles.deleteCandidateRecordTree, {
+      candidateId: args.candidateId
+    });
+
+    return {
+      candidateId: args.candidateId,
+      ...deleted
     };
   }
 });

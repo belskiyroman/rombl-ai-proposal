@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "proposal_engine": "./src/lib/ai/langgraph-entry.ts:proposalEngineLocalGraph"
+  },
+  "env": ".env.local"
+}

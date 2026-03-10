@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useAction, useQuery } from "convex/react";
 import { useForm } from "react-hook-form";
+import type { Id } from "@/convex/_generated/dataModel";
 
 import { api } from "@/convex/_generated/api";
 import type { ExtractionResultsData } from "@/src/components/ExtractionResults";
@@ -34,60 +36,116 @@ interface CandidateProfileOption {
   updatedAt: number;
 }
 
+interface CandidateProfileDetail {
+  _id: string;
+  candidateId: number;
+  displayName: string;
+  positioningSummary: string;
+  toneProfile: string;
+  coreDomains: string[];
+  preferredCtaStyle: string;
+  metadata: {
+    seniority?: string;
+    availability?: string;
+    location?: string;
+    notes?: string;
+  };
+  activeEvidenceCount: number;
+  historicalEvidenceCount: number;
+  updatedAt: number;
+}
+
+interface CandidateEvidenceBlockRow {
+  _id: string;
+  candidateId: number;
+  type: string;
+  text: string;
+  tags: string[];
+  techStack: string[];
+  domains: string[];
+  confidence: number;
+  active: boolean;
+  updatedAt: number;
+}
+
 interface IngestionFormProps {
   onSuccess: (data: ExtractionResultsData) => void;
 }
 
-const profileDefaults: CandidateProfileFormValues = {
-  candidateId: 1,
-  displayName: "",
-  positioningSummary: "",
-  toneProfile: "consultative",
-  coreDomains: [],
-  preferredCtaStyle: "Short confident CTA with a clear next step",
-  seniority: "",
-  availability: "",
-  location: "",
-  notes: ""
-};
+const toneOptions = ["concise", "consultative", "confident", "technical", "founder-like"] as const;
 
-const evidenceDefaults: CandidateEvidenceFormValues = {
-  candidateId: 1,
-  rawEvidenceText: ""
-};
+function createProfileDefaults(candidateId: number): CandidateProfileFormValues {
+  return {
+    candidateId,
+    displayName: "",
+    positioningSummary: "",
+    toneProfile: "consultative",
+    coreDomains: [],
+    preferredCtaStyle: "Short confident CTA with a clear next step",
+    seniority: "",
+    availability: "",
+    location: "",
+    notes: ""
+  };
+}
 
-const historicalDefaults: HistoricalCaseFormValues = {
-  candidateId: 1,
-  jobTitle: "",
-  jobDescription: "",
-  proposalText: "",
-  reply: false,
-  interview: false,
-  hired: false
-};
+function createEvidenceDefaults(candidateId: number): CandidateEvidenceFormValues {
+  return {
+    candidateId,
+    rawEvidenceText: ""
+  };
+}
+
+function createHistoricalDefaults(candidateId: number): HistoricalCaseFormValues {
+  return {
+    candidateId,
+    jobTitle: "",
+    jobDescription: "",
+    proposalText: "",
+    reply: false,
+    interview: false,
+    hired: false
+  };
+}
+
+function formatTimestamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
+}
 
 export function IngestionForm({ onSuccess }: IngestionFormProps) {
   const [mode, setMode] = useState<"profile" | "evidence" | "case">("profile");
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const [domainInput, setDomainInput] = useState("");
   const { toast } = useToast();
 
   const profileOptions = (useQuery(api.profiles.listCandidateProfiles) as CandidateProfileOption[] | undefined) ?? [];
+  const nextCandidateId = (useQuery(api.profiles.getNextCandidateId) as number | undefined) ?? 1;
+  const selectedProfile = useQuery(
+    api.profiles.getCandidateProfile,
+    selectedCandidateId !== null ? { candidateId: selectedCandidateId } : "skip"
+  ) as CandidateProfileDetail | null | undefined;
+  const candidateEvidenceBlocks = (useQuery(
+    api.profiles.listCandidateEvidenceBlocks,
+    selectedCandidateId !== null ? { candidateId: selectedCandidateId } : "skip"
+  ) as CandidateEvidenceBlockRow[] | undefined) ?? [];
+
   const upsertCandidateProfile = useAction(api.profiles.upsertCandidateProfile);
   const ingestCandidateEvidence = useAction(api.profiles.ingestCandidateEvidence);
+  const deleteCandidateEvidenceBlock = useAction(api.profiles.deleteCandidateEvidenceBlock);
+  const deleteCandidate = useAction(api.profiles.deleteCandidate);
   const ingestHistoricalCase = useAction(api.cases.ingestHistoricalCase);
-  const backfillFromV1 = useAction(api.cases.backfillFromV1);
 
   const profileForm = useForm<CandidateProfileFormValues>({
     resolver: zodResolver(candidateProfileFormSchema),
-    defaultValues: profileDefaults
+    defaultValues: createProfileDefaults(nextCandidateId)
   });
   const evidenceForm = useForm<CandidateEvidenceFormValues>({
     resolver: zodResolver(candidateEvidenceFormSchema),
-    defaultValues: evidenceDefaults
+    defaultValues: createEvidenceDefaults(nextCandidateId)
   });
   const historicalForm = useForm<HistoricalCaseFormValues>({
     resolver: zodResolver(historicalCaseFormSchema),
-    defaultValues: historicalDefaults
+    defaultValues: createHistoricalDefaults(nextCandidateId)
   });
 
   const isWorking =
@@ -95,20 +153,65 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     evidenceForm.formState.isSubmitting ||
     historicalForm.formState.isSubmitting;
 
-  function applyCandidate(candidateId: number) {
-    profileForm.setValue("candidateId", candidateId, { shouldDirty: true });
-    evidenceForm.setValue("candidateId", candidateId, { shouldDirty: true });
-    historicalForm.setValue("candidateId", candidateId, { shouldDirty: true });
+  const candidateExists = Boolean(selectedProfile);
+  const workspaceCandidateId = selectedCandidateId ?? nextCandidateId;
 
-    const selected = profileOptions.find((profile) => profile.candidateId === candidateId);
-    if (selected) {
-      profileForm.setValue("displayName", selected.displayName, { shouldDirty: true });
-      profileForm.setValue("toneProfile", selected.toneProfile as CandidateProfileFormValues["toneProfile"], {
-        shouldDirty: true
-      });
-      profileForm.setValue("coreDomains", selected.coreDomains, { shouldDirty: true });
-      profileForm.setValue("preferredCtaStyle", selected.preferredCtaStyle, { shouldDirty: true });
+  useEffect(() => {
+    if (selectedCandidateId !== null) {
+      return;
     }
+
+    if (profileOptions[0]?.candidateId) {
+      setSelectedCandidateId(profileOptions[0].candidateId);
+      return;
+    }
+
+    setSelectedCandidateId(nextCandidateId);
+  }, [nextCandidateId, profileOptions, selectedCandidateId]);
+
+  useEffect(() => {
+    if (selectedCandidateId === null) {
+      return;
+    }
+
+    if (selectedProfile === undefined) {
+      return;
+    }
+
+    if (selectedProfile) {
+      profileForm.reset({
+        candidateId: selectedProfile.candidateId,
+        displayName: selectedProfile.displayName,
+        positioningSummary: selectedProfile.positioningSummary,
+        toneProfile: selectedProfile.toneProfile as CandidateProfileFormValues["toneProfile"],
+        coreDomains: selectedProfile.coreDomains,
+        preferredCtaStyle: selectedProfile.preferredCtaStyle,
+        seniority: selectedProfile.metadata.seniority ?? "",
+        availability: selectedProfile.metadata.availability ?? "",
+        location: selectedProfile.metadata.location ?? "",
+        notes: selectedProfile.metadata.notes ?? ""
+      });
+    } else {
+      profileForm.reset(createProfileDefaults(selectedCandidateId));
+    }
+
+    evidenceForm.reset(createEvidenceDefaults(selectedCandidateId));
+    historicalForm.reset(createHistoricalDefaults(selectedCandidateId));
+    setDomainInput("");
+  }, [selectedCandidateId, selectedProfile, profileForm, evidenceForm, historicalForm]);
+
+  const selectedCandidateOption = useMemo(
+    () => profileOptions.find((profile) => profile.candidateId === selectedCandidateId) ?? null,
+    [profileOptions, selectedCandidateId]
+  );
+
+  function selectCandidate(candidateId: number) {
+    setSelectedCandidateId(candidateId);
+  }
+
+  function createNewCandidate() {
+    setSelectedCandidateId(nextCandidateId);
+    setMode("profile");
   }
 
   function addDomain() {
@@ -128,6 +231,14 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     setDomainInput("");
   }
 
+  function removeDomain(domain: string) {
+    const nextDomains = profileForm.getValues("coreDomains").filter((item) => item !== domain);
+    profileForm.setValue("coreDomains", nextDomains, {
+      shouldDirty: true,
+      shouldValidate: true
+    });
+  }
+
   async function onSubmitProfile(values: CandidateProfileFormValues) {
     try {
       const result = await upsertCandidateProfile({
@@ -145,7 +256,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         }
       });
 
-      applyCandidate(values.candidateId);
+      setSelectedCandidateId(result.candidateId);
       onSuccess({
         operation: "profile",
         candidateId: result.candidateId,
@@ -154,8 +265,8 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
       });
 
       toast({
-        title: "Candidate profile saved",
-        description: "Profile summary and derived evidence blocks are ready for V2 retrieval."
+        title: candidateExists ? "Candidate updated" : "Candidate created",
+        description: "Profile summary and derived evidence blocks are now available for retrieval."
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown profile ingestion error";
@@ -177,6 +288,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         evidenceCount: result.evidenceCount
       });
 
+      evidenceForm.reset(createEvidenceDefaults(values.candidateId));
       toast({
         title: "Evidence added",
         description: "Candidate evidence blocks are now indexed for grounded generation."
@@ -238,6 +350,7 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
           : null
       });
 
+      historicalForm.reset(createHistoricalDefaults(values.candidateId));
       toast({
         title: "Historical case ingested",
         description: result.canonical
@@ -254,22 +367,58 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
     }
   }
 
-  async function onRunBackfill() {
+  async function onDeleteEvidenceBlock(evidenceBlockId: string) {
+    const confirmed = window.confirm("Delete this candidate evidence block?");
+    if (!confirmed) {
+      return;
+    }
+
     try {
-      const result = await backfillFromV1({ limit: 200 });
-      onSuccess({
-        operation: "backfill",
-        importedCount: result.importedCount,
-        canonicalCount: result.canonicalCount
+      await deleteCandidateEvidenceBlock({
+        evidenceBlockId: evidenceBlockId as Id<"candidate_evidence_blocks">
       });
+
       toast({
-        title: "Backfill completed",
-        description: "Legacy V1 records were transformed into V2 library artifacts."
+        title: "Evidence deleted",
+        description: "The candidate evidence block was removed."
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown backfill error";
+      const message = error instanceof Error ? error.message : "Unknown evidence delete error";
       toast({
-        title: "Backfill failed",
+        title: "Delete failed",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  }
+
+  async function onDeleteCandidate() {
+    if (!selectedProfile) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${selectedProfile.displayName} and all linked evidence, historical cases, clusters, and saved runs?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result = await deleteCandidate({
+        candidateId: selectedProfile.candidateId
+      });
+
+      setSelectedCandidateId(null);
+
+      toast({
+        title: "Candidate deleted",
+        description: `Removed ${result.deletedHistoricalCases} cases, ${result.deletedEvidenceBlocks} evidence blocks, and ${result.deletedGenerationRuns} saved runs.`
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown candidate delete error";
+      toast({
+        title: "Candidate delete failed",
         description: message,
         variant: "destructive"
       });
@@ -278,18 +427,45 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
 
   return (
     <Card className="border-0 shadow-lg">
-      <CardHeader className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-xl">V2 Ingestion Console</CardTitle>
+      <CardHeader className="space-y-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-2">
+            <CardTitle className="text-xl">Candidate Console</CardTitle>
             <CardDescription>
-              Ingest candidate profile data, atomic evidence, and historical cases for the structured proposal engine.
+              Build candidate memory, manage grounded evidence, and ingest historical cases into the library.
             </CardDescription>
           </div>
-          <Button type="button" variant="outline" onClick={onRunBackfill} disabled={isWorking}>
-            {isWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Backfill V1
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" asChild>
+              <Link href="/pairs">Open Library</Link>
+            </Button>
+            <Button type="button" onClick={createNewCandidate}>
+              <Plus className="h-4 w-4" />
+              New Candidate
+            </Button>
+            <Button type="button" variant="destructive" onClick={onDeleteCandidate} disabled={!selectedProfile || isWorking}>
+              <Trash2 className="h-4 w-4" />
+              Delete Candidate
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {profileOptions.map((profile) => (
+            <Button
+              key={profile._id}
+              type="button"
+              size="sm"
+              variant={selectedCandidateId === profile.candidateId ? "default" : "outline"}
+              onClick={() => selectCandidate(profile.candidateId)}
+            >
+              {profile.displayName} #{profile.candidateId}
+            </Button>
+          ))}
+          {!candidateExists ? (
+            <Badge variant="secondary">Draft candidate #{workspaceCandidateId}</Badge>
+          ) : null}
+          {profileOptions.length === 0 ? <Badge variant="outline">No candidates yet</Badge> : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -303,315 +479,443 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
             Historical Case
           </Button>
         </div>
-
-        {profileOptions.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {profileOptions.map((profile) => (
-              <Button
-                key={profile._id}
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => applyCandidate(profile.candidateId)}
-              >
-                {profile.displayName} #{profile.candidateId}
-              </Button>
-            ))}
-          </div>
-        ) : (
-          <Badge variant="outline">No candidate profiles yet</Badge>
-        )}
       </CardHeader>
 
       <CardContent>
-        {mode === "profile" ? (
-          <Form {...profileForm}>
-            <form className="space-y-4" onSubmit={profileForm.handleSubmit(onSubmitProfile)}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={profileForm.control}
-                  name="candidateId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Candidate ID</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="number" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={profileForm.control}
-                  name="displayName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Display Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={profileForm.control}
-                name="positioningSummary"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Positioning Summary</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        rows={6}
-                        placeholder="Senior full-stack engineer focused on MVP delivery, architecture ownership, product thinking, and high-signal communication..."
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={profileForm.control}
-                  name="toneProfile"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tone Profile</FormLabel>
-                      <FormControl>
-                        <div className="flex flex-wrap gap-2">
-                          {(["concise", "consultative", "confident", "technical", "founder-like"] as const).map((tone) => (
-                            <Button
-                              key={tone}
-                              type="button"
-                              size="sm"
-                              variant={field.value === tone ? "default" : "outline"}
-                              onClick={() => field.onChange(tone)}
-                            >
-                              {tone}
-                            </Button>
-                          ))}
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={profileForm.control}
-                  name="preferredCtaStyle"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Preferred CTA Style</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <FormLabel>Core Domains</FormLabel>
-                <div className="flex gap-2">
-                  <Input value={domainInput} onChange={(event) => setDomainInput(event.target.value)} />
-                  <Button type="button" variant="outline" onClick={addDomain}>
-                    Add
-                  </Button>
+        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div className="rounded-2xl border bg-muted/20 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Workspace</p>
+              <h3 className="mt-2 text-xl font-semibold">
+                {selectedProfile?.displayName ?? `New Candidate #${workspaceCandidateId}`}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {selectedProfile
+                  ? selectedProfile.positioningSummary
+                  : "Create the candidate profile first, then add evidence and historical cases against this workspace."}
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tone</p>
+                  <p className="mt-2 text-lg font-semibold capitalize">
+                    {selectedProfile?.toneProfile ?? profileForm.watch("toneProfile")}
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {profileForm.watch("coreDomains").map((domain) => (
-                    <Badge key={domain} variant="secondary">
-                      {domain}
-                    </Badge>
-                  ))}
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Evidence</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {selectedProfile?.activeEvidenceCount ?? 0} active
+                  </p>
                 </div>
-                <FormMessage>{profileForm.formState.errors.coreDomains?.message}</FormMessage>
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Case-derived Signals</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {selectedProfile?.historicalEvidenceCount ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Updated</p>
+                  <p className="mt-2 text-sm font-medium">
+                    {selectedProfile ? formatTimestamp(selectedProfile.updatedAt) : "Not saved yet"}
+                  </p>
+                </div>
               </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={profileForm.control}
-                  name="seniority"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Seniority</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={profileForm.control}
-                  name="availability"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Availability</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={profileForm.control}
-                  name="location"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Location</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={profileForm.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Notes</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <Button type="submit" disabled={isWorking}>
-                {profileForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Save Profile
-              </Button>
-            </form>
-          </Form>
-        ) : null}
-
-        {mode === "evidence" ? (
-          <Form {...evidenceForm}>
-            <form className="space-y-4" onSubmit={evidenceForm.handleSubmit(onSubmitEvidence)}>
-              <FormField
-                control={evidenceForm.control}
-                name="candidateId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Candidate ID</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="number" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={evidenceForm.control}
-                name="rawEvidenceText"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Raw Evidence Notes</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        rows={10}
-                        placeholder="Paste project experience, architecture ownership, domain expertise, shipped outcomes, and communication/process signals..."
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" disabled={isWorking}>
-                {evidenceForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Ingest Evidence
-              </Button>
-            </form>
-          </Form>
-        ) : null}
-
-        {mode === "case" ? (
-          <Form {...historicalForm}>
-            <form className="space-y-4" onSubmit={historicalForm.handleSubmit(onSubmitHistoricalCase)}>
-              <FormField
-                control={historicalForm.control}
-                name="candidateId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Candidate ID</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="number" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={historicalForm.control}
-                name="jobTitle"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Job Title</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={historicalForm.control}
-                name="jobDescription"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Job Description</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} rows={8} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={historicalForm.control}
-                name="proposalText"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Historical Proposal</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} rows={8} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex flex-wrap gap-2">
-                {(["reply", "interview", "hired"] as const).map((fieldName) => (
-                  <Button
-                    key={fieldName}
-                    type="button"
-                    size="sm"
-                    variant={historicalForm.watch(fieldName) ? "default" : "outline"}
-                    onClick={() => historicalForm.setValue(fieldName, !historicalForm.watch(fieldName), { shouldDirty: true })}
-                  >
-                    {fieldName}
-                  </Button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(selectedProfile?.coreDomains ?? profileForm.watch("coreDomains")).map((domain) => (
+                  <Badge key={domain} variant="outline">
+                    {domain}
+                  </Badge>
                 ))}
               </div>
-              <Button type="submit" disabled={isWorking}>
-                {historicalForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Ingest Historical Case
-              </Button>
-            </form>
-          </Form>
-        ) : null}
+            </div>
+
+            <div className="rounded-2xl border p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">Candidate Evidence</p>
+                  <p className="text-sm text-muted-foreground">Manage authored evidence blocks attached to this candidate.</p>
+                </div>
+                <Badge variant="secondary">{candidateEvidenceBlocks.length}</Badge>
+              </div>
+              <div className="mt-4 space-y-3">
+                {candidateEvidenceBlocks.length === 0 ? (
+                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                    No candidate-authored evidence blocks yet.
+                  </p>
+                ) : (
+                  candidateEvidenceBlocks.map((block) => (
+                    <div key={block._id} className="rounded-xl border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            <Badge>{block.type}</Badge>
+                            <Badge variant="outline">Confidence {block.confidence.toFixed(2)}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{block.text}</p>
+                        </div>
+                        <Button type="button" size="icon" variant="ghost" onClick={() => onDeleteEvidenceBlock(block._id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {block.tags.map((tag) => (
+                          <Badge key={`${block._id}-${tag}`} variant="secondary">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {block.techStack.map((tech) => (
+                          <Badge key={`${block._id}-${tech}`} variant="outline">
+                            {tech}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border p-5">
+            {mode === "profile" ? (
+              <Form {...profileForm}>
+                <form className="space-y-5" onSubmit={profileForm.handleSubmit(onSubmitProfile)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">{candidateExists ? "Edit Candidate Profile" : "Create Candidate Profile"}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        The candidate profile is the source of truth for positioning and style.
+                      </p>
+                    </div>
+                    <Badge variant="outline">Candidate #{workspaceCandidateId}</Badge>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={profileForm.control}
+                      name="candidateId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Candidate ID</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="number" readOnly />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="displayName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Display Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Roman Belskiy" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={profileForm.control}
+                    name="positioningSummary"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Positioning Summary</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            rows={7}
+                            placeholder="Senior full-stack engineer focused on MVP delivery, architecture ownership, product thinking, and high-signal communication..."
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <FormField
+                      control={profileForm.control}
+                      name="toneProfile"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tone Profile</FormLabel>
+                          <FormControl>
+                            <div className="flex flex-wrap gap-2">
+                              {toneOptions.map((tone) => (
+                                <Button
+                                  key={tone}
+                                  type="button"
+                                  size="sm"
+                                  variant={field.value === tone ? "default" : "outline"}
+                                  onClick={() => field.onChange(tone)}
+                                >
+                                  {tone}
+                                </Button>
+                              ))}
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={profileForm.control}
+                      name="preferredCtaStyle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Preferred CTA Style</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <FormLabel>Core Domains</FormLabel>
+                    <div className="flex gap-2">
+                      <Input
+                        value={domainInput}
+                        onChange={(event) => setDomainInput(event.target.value)}
+                        placeholder="SaaS, Healthcare, AI..."
+                      />
+                      <Button type="button" variant="outline" onClick={addDomain}>
+                        Add
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {profileForm.watch("coreDomains").map((domain) => (
+                        <div key={domain} className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm">
+                          <span>{domain}</span>
+                          <button type="button" className="text-muted-foreground" onClick={() => removeDomain(domain)}>
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <FormMessage>{profileForm.formState.errors.coreDomains?.message}</FormMessage>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={profileForm.control}
+                      name="seniority"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Seniority</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Senior / Lead" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="availability"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Availability</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="30 hrs/week" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={profileForm.control}
+                      name="location"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Location</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Kyiv, Ukraine" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notes</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Founder-friendly, strong architecture ownership..." />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <Button type="submit" disabled={isWorking}>
+                    {profileForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {candidateExists ? "Save Profile" : "Create Candidate"}
+                  </Button>
+                </form>
+              </Form>
+            ) : null}
+
+            {mode === "evidence" ? (
+              <Form {...evidenceForm}>
+                <form className="space-y-5" onSubmit={evidenceForm.handleSubmit(onSubmitEvidence)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Add Candidate Evidence</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Paste grounded notes about projects, tech depth, outcomes, and ownership.
+                      </p>
+                    </div>
+                    <Badge variant="outline">Candidate #{workspaceCandidateId}</Badge>
+                  </div>
+
+                  <FormField
+                    control={evidenceForm.control}
+                    name="candidateId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Candidate ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="number" readOnly />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={evidenceForm.control}
+                    name="rawEvidenceText"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Raw Evidence Notes</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            rows={12}
+                            placeholder="Built scalable SaaS MVPs in Next.js and Node.js, owned architecture decisions, handled stakeholder communication, and shipped production integrations..."
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Button type="submit" disabled={isWorking || !candidateExists}>
+                    {evidenceForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Ingest Evidence
+                  </Button>
+                </form>
+              </Form>
+            ) : null}
+
+            {mode === "case" ? (
+              <Form {...historicalForm}>
+                <form className="space-y-5" onSubmit={historicalForm.handleSubmit(onSubmitHistoricalCase)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Ingest Historical Case</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Add a job and its real proposal so the library can extract signals, fragments, and clusters.
+                      </p>
+                    </div>
+                    <Badge variant="outline">Candidate #{workspaceCandidateId}</Badge>
+                  </div>
+
+                  <FormField
+                    control={historicalForm.control}
+                    name="candidateId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Candidate ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="number" readOnly />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={historicalForm.control}
+                    name="jobTitle"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Title</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Senior Full-Stack Developer for SaaS MVP" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={historicalForm.control}
+                    name="jobDescription"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Description</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} rows={9} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={historicalForm.control}
+                    name="proposalText"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Historical Proposal</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} rows={9} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    {(["reply", "interview", "hired"] as const).map((fieldName) => (
+                      <Button
+                        key={fieldName}
+                        type="button"
+                        size="sm"
+                        variant={historicalForm.watch(fieldName) ? "default" : "outline"}
+                        onClick={() =>
+                          historicalForm.setValue(fieldName, !historicalForm.watch(fieldName), {
+                            shouldDirty: true,
+                            shouldValidate: true
+                          })
+                        }
+                      >
+                        {fieldName}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <Button type="submit" disabled={isWorking || !candidateExists}>
+                    {historicalForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Ingest Historical Case
+                  </Button>
+                </form>
+              </Form>
+            ) : null}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

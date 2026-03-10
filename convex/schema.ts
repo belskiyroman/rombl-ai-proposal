@@ -1,10 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-const legacySourceValidator = v.union(v.literal("manual"), v.literal("chrome_extension"));
-const caseSourceValidator = v.union(v.literal("manual"), v.literal("backfill"));
 const evidenceSourceValidator = v.union(v.literal("candidate_profile"), v.literal("case_inference"));
-const projectTypeValidator = v.union(v.literal("hourly"), v.literal("fixedPrice"), v.literal("hourly/fixedPrice"));
 const proposalToneValidator = v.union(
   v.literal("concise"),
   v.literal("consultative"),
@@ -22,12 +19,6 @@ const evidenceTypeValidator = v.union(
   v.literal("achievement")
 );
 const fragmentTypeValidator = v.union(v.literal("opening"), v.literal("proof"), v.literal("closing"));
-const writingStyleAnalysisValidator = v.object({
-  formality: v.float64(),
-  enthusiasm: v.float64(),
-  keyVocabulary: v.array(v.string()),
-  sentenceStructure: v.string()
-});
 const proposalStrategyValidator = v.object({
   tone: proposalToneValidator,
   length: bucketValidator,
@@ -132,6 +123,99 @@ const jobUnderstandingValidator = v.object({
   projectRiskFlags: v.array(v.string()),
   proposalStrategy: proposalStrategyValidator
 });
+const candidateSnapshotValidator = v.object({
+  candidateId: v.float64(),
+  displayName: v.string(),
+  toneProfile: v.string(),
+  preferredCtaStyle: v.string()
+});
+const retrievedCaseSnapshotValidator = v.object({
+  _id: v.string(),
+  clusterId: v.optional(v.union(v.string(), v.null())),
+  candidateId: v.float64(),
+  canonical: v.boolean(),
+  jobTitle: v.string(),
+  jobExtract: v.object({
+    projectType: v.string(),
+    domain: v.string(),
+    requiredSkills: v.array(v.string()),
+    optionalSkills: v.array(v.string()),
+    stack: v.array(v.string()),
+    clientNeeds: v.array(v.string()),
+    summary: v.string()
+  }),
+  proposalExtract: v.object({
+    hook: v.string(),
+    valueProposition: v.string(),
+    proofPoints: v.array(v.string()),
+    tone: v.string()
+  }),
+  quality: caseQualityValidator,
+  outcome: v.optional(outcomeSignalsValidator),
+  finalScore: v.optional(v.float64()),
+  semanticScore: v.optional(v.float64())
+});
+const retrievedFragmentSnapshotValidator = v.object({
+  _id: v.string(),
+  clusterId: v.optional(v.union(v.string(), v.null())),
+  candidateId: v.float64(),
+  fragmentType: fragmentTypeValidator,
+  text: v.string(),
+  tags: v.array(v.string()),
+  specificityScore: v.float64(),
+  genericnessScore: v.float64(),
+  qualityScore: v.float64(),
+  retrievalEligible: v.boolean()
+});
+const retrievedEvidenceSnapshotValidator = v.object({
+  _id: v.string(),
+  candidateId: v.float64(),
+  type: evidenceTypeValidator,
+  text: v.string(),
+  tags: v.array(v.string()),
+  techStack: v.array(v.string()),
+  domains: v.array(v.string()),
+  confidence: v.float64(),
+  active: v.boolean(),
+  source: evidenceSourceValidator
+});
+const retrievedContextSnapshotValidator = v.object({
+  similarCases: v.array(retrievedCaseSnapshotValidator),
+  fragments: v.object({
+    openings: v.array(retrievedFragmentSnapshotValidator),
+    proofs: v.array(retrievedFragmentSnapshotValidator),
+    closings: v.array(retrievedFragmentSnapshotValidator)
+  }),
+  evidenceCandidates: v.array(retrievedEvidenceSnapshotValidator)
+});
+const stepTokenUsageValidator = v.object({
+  inputTokens: v.float64(),
+  outputTokens: v.float64(),
+  totalTokens: v.float64(),
+  reasoningTokens: v.float64()
+});
+const stepTelemetryValidator = v.object({
+  step: v.string(),
+  stage: v.string(),
+  kind: v.union(v.literal("llm"), v.literal("embedding"), v.literal("vector_search"), v.literal("query")),
+  startedAt: v.float64(),
+  finishedAt: v.float64(),
+  durationMs: v.float64(),
+  model: v.optional(v.string()),
+  attempt: v.optional(v.float64()),
+  limit: v.optional(v.float64()),
+  resultCount: v.optional(v.float64()),
+  fragmentType: v.optional(v.string()),
+  tokenUsage: v.optional(stepTokenUsageValidator)
+});
+const telemetrySummaryValidator = v.object({
+  totalSteps: v.float64(),
+  totalDurationMs: v.float64(),
+  totalInputTokens: v.float64(),
+  totalOutputTokens: v.float64(),
+  totalTokens: v.float64(),
+  totalReasoningTokens: v.float64()
+});
 
 export default defineSchema({
   candidate_profiles: defineTable({
@@ -187,7 +271,7 @@ export default defineSchema({
 
   historical_cases: defineTable({
     candidateId: v.float64(),
-    source: caseSourceValidator,
+    source: v.optional(v.string()),
     jobTitle: v.string(),
     rawJobDescription: v.string(),
     rawProposalText: v.string(),
@@ -204,9 +288,6 @@ export default defineSchema({
     rawJobEmbedding: v.array(v.float64()),
     jobSummaryEmbedding: v.array(v.float64()),
     needsEmbedding: v.array(v.float64()),
-    legacyRawJobId: v.optional(v.string()),
-    legacyProcessedProposalId: v.optional(v.string()),
-    legacyStyleProfileId: v.optional(v.string()),
     createdAt: v.float64(),
     updatedAt: v.float64()
   })
@@ -245,6 +326,7 @@ export default defineSchema({
     createdAt: v.float64(),
     updatedAt: v.float64()
   })
+    .index("by_candidate_id", ["candidateId"])
     .index("by_case_id", ["caseId"])
     .index("by_candidate_id_and_type", ["candidateId", "fragmentType"])
     .vectorIndex("by_embedding", {
@@ -253,128 +335,29 @@ export default defineSchema({
       filterFields: ["candidateId", "fragmentType", "retrievalEligible"]
     }),
 
-  generation_runs_v2: defineTable({
+  generation_runs: defineTable({
     candidateId: v.float64(),
     jobInput: generationJobInputValidator,
     jobUnderstanding: jobUnderstandingValidator,
     retrievedCaseIds: v.array(v.id("historical_cases")),
     retrievedFragmentIds: v.array(v.id("proposal_fragments")),
     retrievedEvidenceIds: v.array(v.id("candidate_evidence_blocks")),
+    executionTrace: v.optional(v.array(v.string())),
+    retrievedContextSnapshot: v.optional(retrievedContextSnapshotValidator),
+    candidateSnapshot: v.optional(candidateSnapshotValidator),
     selectedEvidence: v.array(selectedEvidenceValidator),
     proposalPlan: proposalPlanValidator,
     draftHistory: v.array(v.string()),
     critiqueHistory: v.array(draftCritiqueValidator),
     copyRisk: copyRiskValidator,
+    stepTelemetry: v.optional(v.array(stepTelemetryValidator)),
+    telemetrySummary: v.optional(telemetrySummaryValidator),
     finalProposal: v.string(),
     approvalStatus: v.union(v.literal("APPROVED"), v.literal("NEEDS_REVISION")),
     createdAt: v.float64(),
     updatedAt: v.float64()
   })
     .index("by_candidate_id", ["candidateId"])
-    .index("by_created_at", ["createdAt"]),
-
-  raw_jobs: defineTable({
-    source: legacySourceValidator,
-    externalJobId: v.optional(v.float64()),
-    jobLink: v.optional(v.string()),
-    clientLocation: v.string(),
-    clientReview: v.float64(),
-    clientReviewAmount: v.float64(),
-    clientTotalSpent: v.float64(),
-    projectType: projectTypeValidator,
-    skills: v.array(v.string()),
-    title: v.string(),
-    text: v.string(),
-    embedding: v.array(v.float64()),
-    techStack: v.array(v.string()),
-    projectConstraints: v.array(v.string()),
-    memberId: v.float64(),
-    createdAt: v.float64(),
-    updatedAt: v.float64()
-  })
-    .index("by_member_id", ["memberId"])
+    .index("by_candidate_id_and_created_at", ["candidateId", "createdAt"])
     .index("by_created_at", ["createdAt"])
-    .searchIndex("search_text", {
-      searchField: "text",
-      filterFields: ["source", "clientLocation"]
-    })
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 1536,
-      filterFields: ["source", "clientLocation"]
-    }),
-
-  style_profiles: defineTable({
-    source: legacySourceValidator,
-    memberId: v.float64(),
-    memberName: v.string(),
-    memberLocation: v.string(),
-    agency: v.boolean(),
-    agencyName: v.optional(v.string()),
-    talentBadge: v.optional(v.string()),
-    jss: v.float64(),
-    writingStyleAnalysis: writingStyleAnalysisValidator,
-    keyVocabulary: v.array(v.string()),
-    sentenceStructure: v.string(),
-    createdAt: v.float64(),
-    updatedAt: v.float64()
-  })
-    .index("by_member_id", ["memberId"])
-    .index("by_created_at", ["createdAt"]),
-
-  processed_proposals: defineTable({
-    source: legacySourceValidator,
-    externalProposalId: v.float64(),
-    externalJobId: v.optional(v.float64()),
-    memberId: v.float64(),
-    viewed: v.boolean(),
-    interview: v.boolean(),
-    offer: v.boolean(),
-    price: v.string(),
-    priceAmount: v.float64(),
-    agency: v.boolean(),
-    text: v.string(),
-    rawJobId: v.id("raw_jobs"),
-    styleProfileId: v.id("style_profiles"),
-    createdAt: v.float64(),
-    updatedAt: v.float64()
-  })
-    .index("by_external_proposal_id", ["externalProposalId"])
-    .index("by_member_id", ["memberId"])
-    .index("by_raw_job_id", ["rawJobId"])
-    .index("by_created_at", ["createdAt"]),
-
-  jobProposalPairs: defineTable({
-    source: legacySourceValidator,
-    jobText: v.string(),
-    proposalText: v.string(),
-    embedding: v.array(v.float64()),
-    techStack: v.array(v.string()),
-    projectConstraints: v.array(v.string()),
-    writingStyleAnalysis: writingStyleAnalysisValidator,
-    createdAt: v.float64(),
-    updatedAt: v.float64()
-  })
-    .index("by_created_at", ["createdAt"])
-    .searchIndex("search_job_text", {
-      searchField: "jobText",
-      filterFields: ["source"]
-    })
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 1536,
-      filterFields: ["source"]
-    }),
-
-  generationRuns: defineTable({
-    jobText: v.string(),
-    embedding: v.array(v.float64()),
-    ragContextIds: v.array(v.id("jobProposalPairs")),
-    proposalDraft: v.string(),
-    finalProposal: v.string(),
-    criticStatus: v.union(v.literal("APPROVED"), v.literal("NEEDS_REVISION")),
-    critiquePoints: v.optional(v.array(v.string())),
-    iterations: v.float64(),
-    createdAt: v.float64()
-  }).index("by_created_at", ["createdAt"])
 });

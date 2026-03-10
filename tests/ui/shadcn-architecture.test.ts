@@ -51,8 +51,8 @@ describe("shadcn wrapper scaffolding", () => {
   });
 });
 
-describe("V2 ingestion UI", () => {
-  it("uses shadcn forms, toast, and V2 actions without direct Radix imports", () => {
+describe("candidate console UI", () => {
+  it("uses shadcn forms, toast, and current ingestion actions without direct Radix imports", () => {
     expect(fileExists("src/components/IngestionForm.tsx")).toBe(true);
     const source = readFile("src/components/IngestionForm.tsx");
 
@@ -61,17 +61,18 @@ describe("V2 ingestion UI", () => {
     expect(source).toContain("api.profiles.upsertCandidateProfile");
     expect(source).toContain("api.profiles.ingestCandidateEvidence");
     expect(source).toContain("api.cases.ingestHistoricalCase");
-    expect(source).toContain("api.cases.backfillFromV1");
+    expect(source).not.toContain("api.cases.backfillFromV1");
     expect(source).not.toContain("@radix-ui/react-");
   });
 
   it("renders candidate profile, evidence, and historical case modes", () => {
     const source = readFile("src/components/IngestionForm.tsx");
 
+    expect(source).toContain("Candidate Console");
     expect(source).toContain("Candidate Profile");
     expect(source).toContain("Candidate Evidence");
     expect(source).toContain("Historical Case");
-    expect(source).toContain("Backfill V1");
+    expect(source).not.toContain("Backfill V1");
   });
 });
 

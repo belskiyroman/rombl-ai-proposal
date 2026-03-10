@@ -9,7 +9,7 @@ export default function HomePage() {
           R
         </div>
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">Structured Proposal Engine V2</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Structured Proposal Engine</h1>
           <p className="text-sm text-muted-foreground">
             Grounded proposal generation powered by canonical cases, fragments, and candidate evidence
           </p>

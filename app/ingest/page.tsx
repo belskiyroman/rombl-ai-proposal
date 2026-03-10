@@ -5,10 +5,6 @@ import { useState } from "react";
 import { ExtractionResults, type ExtractionResultsData } from "@/src/components/ExtractionResults";
 import { IngestionForm } from "@/src/components/IngestionForm";
 
-/**
- * V2 ingestion console for candidate profile, evidence, historical cases,
- * and V1 backfill into the structured proposal engine.
- */
 export default function IngestPage() {
     const [results, setResults] = useState<ExtractionResultsData | null>(null);
 
@@ -22,10 +18,10 @@ export default function IngestPage() {
                     </div>
                     <div>
                         <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                            Structured Proposal Engine V2
+                            Structured Proposal Engine
                         </h1>
                         <p className="text-sm text-muted-foreground">
-                            Build candidate profile memory, evidence blocks, and canonical case-library artifacts
+                            Build candidate memory, evidence blocks, and canonical case-library artifacts
                         </p>
                     </div>
                 </div>
