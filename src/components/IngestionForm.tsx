@@ -1,343 +1,424 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Plus } from "lucide-react";
-import { useAction, useQuery, useMutation } from "convex/react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { useAction, useQuery } from "convex/react";
 import { useForm } from "react-hook-form";
+import type { Id } from "@/convex/_generated/dataModel";
 
 import { api } from "@/convex/_generated/api";
 import type { ExtractionResultsData } from "@/src/components/ExtractionResults";
-import { parseUpworkJobHtml } from "@/src/lib/ai/html-parser";
 import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from "@/src/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/src/components/ui/form";
 import { Input } from "@/src/components/ui/input";
 import { Textarea } from "@/src/components/ui/textarea";
 import { useToast } from "@/src/hooks/use-toast";
-import { cn } from "@/src/lib/utils";
 import {
-  ingestionFormSchema,
-  pasteHtmlSchema,
-  pasteJsonSchema,
-  type IngestionFormValues,
-  type PasteHtmlValues,
-  type PasteJsonValues
+  candidateEvidenceFormSchema,
+  candidateProfileFormSchema,
+  historicalCaseFormSchema,
+  type CandidateEvidenceFormValues,
+  type CandidateProfileFormValues,
+  type HistoricalCaseFormValues
 } from "@/lib/schemas/ingestion-form-schema";
+
+interface CandidateProfileOption {
+  _id: string;
+  candidateId: number;
+  displayName: string;
+  toneProfile: string;
+  coreDomains: string[];
+  preferredCtaStyle: string;
+  updatedAt: number;
+}
+
+interface CandidateProfileDetail {
+  _id: string;
+  candidateId: number;
+  displayName: string;
+  positioningSummary: string;
+  toneProfile: string;
+  coreDomains: string[];
+  preferredCtaStyle: string;
+  metadata: {
+    seniority?: string;
+    availability?: string;
+    location?: string;
+    notes?: string;
+  };
+  activeEvidenceCount: number;
+  historicalEvidenceCount: number;
+  updatedAt: number;
+}
+
+interface CandidateEvidenceBlockRow {
+  _id: string;
+  candidateId: number;
+  type: string;
+  text: string;
+  tags: string[];
+  techStack: string[];
+  domains: string[];
+  confidence: number;
+  active: boolean;
+  updatedAt: number;
+}
 
 interface IngestionFormProps {
   onSuccess: (data: ExtractionResultsData) => void;
 }
 
-const defaultValues: IngestionFormValues = {
-  job: {
-    jobLink: "",
-    clientLocation: "",
-    clientReview: 0,
-    clientReviewAmount: 0,
-    clientTotalSpent: 0,
-    type: "fixedPrice",
-    skills: [],
-    title: "",
-    text: ""
-  },
-  proposal: {
-    id: 0,
-    viewed: false,
+const toneOptions = ["concise", "consultative", "confident", "technical", "founder-like"] as const;
+
+function createProfileDefaults(candidateId: number): CandidateProfileFormValues {
+  return {
+    candidateId,
+    displayName: "",
+    positioningSummary: "",
+    toneProfile: "consultative",
+    coreDomains: [],
+    preferredCtaStyle: "Short confident CTA with a clear next step",
+    seniority: "",
+    availability: "",
+    location: "",
+    notes: ""
+  };
+}
+
+function createEvidenceDefaults(candidateId: number): CandidateEvidenceFormValues {
+  return {
+    candidateId,
+    rawEvidenceText: ""
+  };
+}
+
+function createHistoricalDefaults(candidateId: number): HistoricalCaseFormValues {
+  return {
+    candidateId,
+    jobTitle: "",
+    jobDescription: "",
+    proposalText: "",
+    reply: false,
     interview: false,
-    offer: false,
-    price: "",
-    agency: false,
-    memberId: 0,
-    text: ""
-  },
-  member: {
-    id: 0,
-    name: "",
-    agency: false,
-    agencyName: "",
-    talentBadge: "",
-    jss: 0,
-    location: ""
-  }
-};
+    hired: false
+  };
+}
 
-const projectTypes: Array<{ value: IngestionFormValues["job"]["type"]; label: string }> = [
-  { value: "hourly", label: "Hourly" },
-  { value: "fixedPrice", label: "Fixed Price" },
-  { value: "hourly/fixedPrice", label: "Hourly / Fixed Price" }
-];
-
-function BooleanBadgeField({
-  label,
-  value,
-  onChange
-}: {
-  label: string;
-  value: boolean;
-  onChange: (nextValue: boolean) => void;
-}) {
-  return (
-    <button type="button" onClick={() => onChange(!value)} className="inline-flex items-center gap-1.5">
-      <Badge variant={value ? "default" : "outline"} className="cursor-pointer select-none px-3 py-1">
-        {label}: {value ? "Yes" : "No"}
-      </Badge>
-    </button>
-  );
+function formatTimestamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
 }
 
 export function IngestionForm({ onSuccess }: IngestionFormProps) {
-  const [mode, setMode] = useState<"form" | "json" | "html">("form");
-  const [skillInput, setSkillInput] = useState("");
-  const [newMemberOpen, setNewMemberOpen] = useState(false);
-  const [isCreatingMember, setIsCreatingMember] = useState(false);
-  const [newMember, setNewMember] = useState({
-    id: 0,
-    name: "",
-    location: "",
-    agency: false,
-    agencyName: "",
-    talentBadge: "",
-    jss: 0
-  });
-
+  const [mode, setMode] = useState<"profile" | "evidence" | "case">("profile");
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
+  const [domainInput, setDomainInput] = useState("");
   const { toast } = useToast();
-  const ingestAction = useAction(api.jobs.ingestJobProposalPair);
-  const createMember = useMutation(api.members.createMember);
 
-  const form = useForm<IngestionFormValues>({
-    resolver: zodResolver(ingestionFormSchema),
-    defaultValues
+  const profileOptions = (useQuery(api.profiles.listCandidateProfiles) as CandidateProfileOption[] | undefined) ?? [];
+  const nextCandidateId = (useQuery(api.profiles.getNextCandidateId) as number | undefined) ?? 1;
+  const selectedProfile = useQuery(
+    api.profiles.getCandidateProfile,
+    selectedCandidateId !== null ? { candidateId: selectedCandidateId } : "skip"
+  ) as CandidateProfileDetail | null | undefined;
+  const candidateEvidenceBlocks = (useQuery(
+    api.profiles.listCandidateEvidenceBlocks,
+    selectedCandidateId !== null ? { candidateId: selectedCandidateId } : "skip"
+  ) as CandidateEvidenceBlockRow[] | undefined) ?? [];
+
+  const upsertCandidateProfile = useAction(api.profiles.upsertCandidateProfile);
+  const ingestCandidateEvidence = useAction(api.profiles.ingestCandidateEvidence);
+  const deleteCandidateEvidenceBlock = useAction(api.profiles.deleteCandidateEvidenceBlock);
+  const deleteCandidate = useAction(api.profiles.deleteCandidate);
+  const ingestHistoricalCase = useAction(api.cases.ingestHistoricalCase);
+
+  const profileForm = useForm<CandidateProfileFormValues>({
+    resolver: zodResolver(candidateProfileFormSchema),
+    defaultValues: createProfileDefaults(nextCandidateId)
+  });
+  const evidenceForm = useForm<CandidateEvidenceFormValues>({
+    resolver: zodResolver(candidateEvidenceFormSchema),
+    defaultValues: createEvidenceDefaults(nextCandidateId)
+  });
+  const historicalForm = useForm<HistoricalCaseFormValues>({
+    resolver: zodResolver(historicalCaseFormSchema),
+    defaultValues: createHistoricalDefaults(nextCandidateId)
   });
 
-  const jsonForm = useForm<PasteJsonValues>({
-    resolver: zodResolver(pasteJsonSchema),
-    defaultValues: { rawJson: "" }
-  });
+  const isWorking =
+    profileForm.formState.isSubmitting ||
+    evidenceForm.formState.isSubmitting ||
+    historicalForm.formState.isSubmitting;
 
-  const htmlForm = useForm<PasteHtmlValues>({
-    resolver: zodResolver(pasteHtmlSchema),
-    defaultValues: { rawHtml: "" }
-  });
+  const candidateExists = Boolean(selectedProfile);
+  const workspaceCandidateId = selectedCandidateId ?? nextCandidateId;
 
-  const skills = form.watch("job.skills");
-  const selectedMemberId = form.watch("member.id");
-
-  const members = useQuery(api.members.listMembers) ?? [];
-
-  function selectMember(memberId: number) {
-    const member = members.find((m) => m.memberId === memberId);
-    if (member) {
-      applyMemberToForm({
-        id: member.memberId,
-        name: member.memberName,
-        location: member.memberLocation,
-        agency: member.agency,
-        agencyName: member.agencyName ?? "",
-        talentBadge: member.talentBadge ?? "",
-        jss: member.jss
-      });
-    }
-  }
-
-  function applyMemberToForm(m: typeof newMember) {
-    form.setValue("member.id", m.id, { shouldDirty: true });
-    form.setValue("member.name", m.name, { shouldDirty: true });
-    form.setValue("member.location", m.location, { shouldDirty: true });
-    form.setValue("member.agency", m.agency, { shouldDirty: true });
-    form.setValue("member.agencyName", m.agencyName, { shouldDirty: true });
-    form.setValue("member.talentBadge", m.talentBadge, { shouldDirty: true });
-    form.setValue("member.jss", m.jss, { shouldDirty: true });
-    syncProposalMemberId(m.id);
-  }
-
-  async function saveNewMember() {
-    if (!newMember.id || newMember.id <= 0) {
-      toast({ title: "Member ID is required", description: "Enter a positive Member ID.", variant: "destructive" });
-      return;
-    }
-    
-    setIsCreatingMember(true);
-    try {
-      await createMember({
-        memberId: newMember.id,
-        memberName: newMember.name,
-        memberLocation: newMember.location,
-        agency: newMember.agency,
-        agencyName: newMember.agencyName || undefined,
-        talentBadge: newMember.talentBadge || undefined,
-        jss: newMember.jss
-      });
-      applyMemberToForm(newMember);
-      setNewMemberOpen(false);
-      toast({ title: "Member added", description: `Member #${newMember.id} successfully created and applied.` });
-    } catch (error) {
-       const message = error instanceof Error ? error.message : "Unknown error";
-       toast({ title: "Failed to create member", description: message, variant: "destructive" });
-    } finally {
-      setIsCreatingMember(false);
-    }
-  }
-
-  const resetNewMemberForm = useCallback(() => {
-    setNewMember({ id: 0, name: "", location: "", agency: false, agencyName: "", talentBadge: "", jss: 0 });
-  }, []);
-
-  function addSkill() {
-    const trimmed = skillInput.trim();
-    if (!trimmed || skills.includes(trimmed)) {
+  useEffect(() => {
+    if (selectedCandidateId !== null) {
       return;
     }
 
-    form.setValue("job.skills", [...skills, trimmed], {
+    if (profileOptions[0]?.candidateId) {
+      setSelectedCandidateId(profileOptions[0].candidateId);
+      return;
+    }
+
+    setSelectedCandidateId(nextCandidateId);
+  }, [nextCandidateId, profileOptions, selectedCandidateId]);
+
+  useEffect(() => {
+    if (selectedCandidateId === null) {
+      return;
+    }
+
+    if (selectedProfile === undefined) {
+      return;
+    }
+
+    if (selectedProfile) {
+      profileForm.reset({
+        candidateId: selectedProfile.candidateId,
+        displayName: selectedProfile.displayName,
+        positioningSummary: selectedProfile.positioningSummary,
+        toneProfile: selectedProfile.toneProfile as CandidateProfileFormValues["toneProfile"],
+        coreDomains: selectedProfile.coreDomains,
+        preferredCtaStyle: selectedProfile.preferredCtaStyle,
+        seniority: selectedProfile.metadata.seniority ?? "",
+        availability: selectedProfile.metadata.availability ?? "",
+        location: selectedProfile.metadata.location ?? "",
+        notes: selectedProfile.metadata.notes ?? ""
+      });
+    } else {
+      profileForm.reset(createProfileDefaults(selectedCandidateId));
+    }
+
+    evidenceForm.reset(createEvidenceDefaults(selectedCandidateId));
+    historicalForm.reset(createHistoricalDefaults(selectedCandidateId));
+    setDomainInput("");
+  }, [selectedCandidateId, selectedProfile, profileForm, evidenceForm, historicalForm]);
+
+  const selectedCandidateOption = useMemo(
+    () => profileOptions.find((profile) => profile.candidateId === selectedCandidateId) ?? null,
+    [profileOptions, selectedCandidateId]
+  );
+
+  function selectCandidate(candidateId: number) {
+    setSelectedCandidateId(candidateId);
+  }
+
+  function createNewCandidate() {
+    setSelectedCandidateId(nextCandidateId);
+    setMode("profile");
+  }
+
+  function addDomain() {
+    const value = domainInput.trim();
+    if (!value) {
+      return;
+    }
+
+    const currentDomains = profileForm.getValues("coreDomains");
+    if (!currentDomains.includes(value)) {
+      profileForm.setValue("coreDomains", [...currentDomains, value], {
+        shouldDirty: true,
+        shouldValidate: true
+      });
+    }
+
+    setDomainInput("");
+  }
+
+  function removeDomain(domain: string) {
+    const nextDomains = profileForm.getValues("coreDomains").filter((item) => item !== domain);
+    profileForm.setValue("coreDomains", nextDomains, {
       shouldDirty: true,
       shouldValidate: true
     });
-    setSkillInput("");
   }
 
-  function removeSkill(skill: string) {
-    form.setValue(
-      "job.skills",
-      skills.filter((item) => item !== skill),
-      { shouldDirty: true, shouldValidate: true }
-    );
-  }
-
-  function syncProposalMemberId(nextMemberId: number) {
-    const normalizedMemberId = Number.isFinite(nextMemberId) && nextMemberId > 0 ? nextMemberId : 0;
-    form.setValue("proposal.memberId", normalizedMemberId, {
-      shouldDirty: true,
-      shouldValidate: true
-    });
-  }
-
-  async function onFormSubmit(values: IngestionFormValues) {
+  async function onSubmitProfile(values: CandidateProfileFormValues) {
     try {
-      const proposedMemberLocation = values.member.location?.trim().toUpperCase();
-      const normalizedMemberLocation =
-        proposedMemberLocation && /^[A-Z]{2,3}$/.test(proposedMemberLocation) ? proposedMemberLocation : "US";
-      const normalizedMemberId = values.member.id;
-
-      const normalizedMember = {
-        id: normalizedMemberId,
-        name: values.member.name?.trim() || `Member #${normalizedMemberId}`,
-        agency: values.member.agency ?? values.proposal.agency,
-        agencyName: values.member.agencyName?.trim() || undefined,
-        talentBadge: values.member.talentBadge?.trim() || undefined,
-        jss: values.member.jss ?? 0,
-        location: normalizedMemberLocation
-      };
-
-      const autoProposalId = values.proposal.id && values.proposal.id > 0 ? values.proposal.id : Date.now();
-
-      const result = await ingestAction({
-        source: "manual",
-        job: values.job,
-        proposal: {
-          ...values.proposal,
-          id: autoProposalId,
-          memberId: normalizedMemberId
-        },
-        member: normalizedMember
-      });
-
-      toast({
-        title: "Ingestion successful",
-        description: "Created raw job, style profile, and processed proposal records."
-      });
-
-      onSuccess({
-        rawJobId: result.rawJobId,
-        styleProfileId: result.styleProfileId,
-        processedProposalId: result.processedProposalId,
-        executionTrace: result.executionTrace
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      toast({
-        title: "Ingestion failed",
-        description: message,
-        variant: "destructive"
-      });
-    }
-  }
-
-  async function onJsonSubmit(values: PasteJsonValues) {
-    try {
-      const parsed = JSON.parse(values.rawJson);
-      const validated = ingestionFormSchema.parse(parsed);
-
-      form.reset(validated);
-      syncProposalMemberId(validated.member.id);
-      setMode("form");
-
-      toast({
-        title: "JSON parsed successfully",
-        description: "Review loaded fields and submit ingestion."
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid JSON payload";
-      toast({
-        title: "JSON parse error",
-        description: message,
-        variant: "destructive"
-      });
-    }
-  }
-
-  async function onHtmlSubmit(values: PasteHtmlValues) {
-    try {
-      const parsed = parseUpworkJobHtml(values.rawHtml);
-      const current = form.getValues();
-
-      form.reset({
-        ...current,
-        job: {
-          ...current.job,
-          jobLink: parsed.jobLink || current.job.jobLink,
-          title: parsed.title || current.job.title,
-          text: parsed.text || current.job.text,
-          skills: parsed.skills.length > 0 ? parsed.skills : current.job.skills,
-          type: parsed.type,
-          clientLocation: parsed.clientLocation || current.job.clientLocation,
-          clientReview: parsed.clientReview || current.job.clientReview,
-          clientReviewAmount: parsed.clientReviewAmount || current.job.clientReviewAmount,
-          clientTotalSpent: parsed.clientTotalSpent || current.job.clientTotalSpent
+      const result = await upsertCandidateProfile({
+        candidateId: values.candidateId,
+        displayName: values.displayName,
+        positioningSummary: values.positioningSummary,
+        toneProfile: values.toneProfile,
+        coreDomains: values.coreDomains,
+        preferredCtaStyle: values.preferredCtaStyle,
+        metadata: {
+          seniority: values.seniority || undefined,
+          availability: values.availability || undefined,
+          location: values.location || undefined,
+          notes: values.notes || undefined
         }
       });
 
-      setMode("form");
-
-      const extractedFields = [
-        parsed.title && "title",
-        parsed.text && "description",
-        parsed.skills.length > 0 && `${parsed.skills.length} skills`,
-        parsed.clientLocation && "location",
-        parsed.clientTotalSpent > 0 && "total spent",
-        parsed.jobLink && "job link"
-      ].filter(Boolean);
+      setSelectedCandidateId(result.candidateId);
+      onSuccess({
+        operation: "profile",
+        candidateId: result.candidateId,
+        profileId: result.profileId,
+        evidenceCount: result.evidenceCount
+      });
 
       toast({
-        title: "HTML parsed successfully",
-        description:
-          extractedFields.length > 0
-            ? `Extracted: ${extractedFields.join(", ")}. Review Job and submit.`
-            : "No fields extracted. Verify the HTML payload and try again."
+        title: candidateExists ? "Candidate updated" : "Candidate created",
+        description: "Profile summary and derived evidence blocks are now available for retrieval."
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid HTML payload";
+      const message = error instanceof Error ? error.message : "Unknown profile ingestion error";
       toast({
-        title: "HTML parse error",
+        title: "Profile save failed",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  }
+
+  async function onSubmitEvidence(values: CandidateEvidenceFormValues) {
+    try {
+      const result = await ingestCandidateEvidence(values);
+
+      onSuccess({
+        operation: "evidence",
+        candidateId: result.candidateId,
+        evidenceCount: result.evidenceCount
+      });
+
+      evidenceForm.reset(createEvidenceDefaults(values.candidateId));
+      toast({
+        title: "Evidence added",
+        description: "Candidate evidence blocks are now indexed for grounded generation."
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown evidence ingestion error";
+      toast({
+        title: "Evidence ingestion failed",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  }
+
+  async function onSubmitHistoricalCase(values: HistoricalCaseFormValues) {
+    try {
+      const result = await ingestHistoricalCase({
+        candidateId: values.candidateId,
+        jobTitle: values.jobTitle,
+        jobDescription: values.jobDescription,
+        proposalText: values.proposalText,
+        outcome: {
+          reply: values.reply,
+          interview: values.interview,
+          hired: values.hired
+        }
+      });
+
+      onSuccess({
+        operation: "case",
+        historicalCaseId: result.historicalCaseId,
+        clusterId: result.clusterId,
+        canonical: result.canonical,
+        fragmentIds: result.fragmentIds,
+        evidenceIds: result.evidenceIds,
+        jobExtract: result.jobExtract
+          ? {
+              projectType: result.jobExtract.projectType,
+              domain: result.jobExtract.domain,
+              stack: result.jobExtract.stack,
+              clientNeeds: result.jobExtract.clientNeeds,
+              summary: result.jobExtract.summary
+            }
+          : null,
+        proposalExtract: result.proposalExtract
+          ? {
+              hook: result.proposalExtract.hook,
+              tone: result.proposalExtract.tone,
+              valueProposition: result.proposalExtract.valueProposition
+            }
+          : null,
+        quality: result.quality
+          ? {
+              overall: result.quality.overall,
+              humanScore: result.quality.humanScore,
+              specificityScore: result.quality.specificityScore,
+              genericnessScore: result.quality.genericnessScore
+            }
+          : null
+      });
+
+      historicalForm.reset(createHistoricalDefaults(values.candidateId));
+      toast({
+        title: "Historical case ingested",
+        description: result.canonical
+          ? "Case became the canonical representative of its cluster."
+          : "Case was stored as a cluster variant."
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown historical-case ingestion error";
+      toast({
+        title: "Case ingestion failed",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  }
+
+  async function onDeleteEvidenceBlock(evidenceBlockId: string) {
+    const confirmed = window.confirm("Delete this candidate evidence block?");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteCandidateEvidenceBlock({
+        evidenceBlockId: evidenceBlockId as Id<"candidate_evidence_blocks">
+      });
+
+      toast({
+        title: "Evidence deleted",
+        description: "The candidate evidence block was removed."
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown evidence delete error";
+      toast({
+        title: "Delete failed",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  }
+
+  async function onDeleteCandidate() {
+    if (!selectedProfile) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${selectedProfile.displayName} and all linked evidence, historical cases, clusters, and saved runs?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result = await deleteCandidate({
+        candidateId: selectedProfile.candidateId
+      });
+
+      setSelectedCandidateId(null);
+
+      toast({
+        title: "Candidate deleted",
+        description: `Removed ${result.deletedHistoricalCases} cases, ${result.deletedEvidenceBlocks} evidence blocks, and ${result.deletedGenerationRuns} saved runs.`
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown candidate delete error";
+      toast({
+        title: "Candidate delete failed",
         description: message,
         variant: "destructive"
       });
@@ -346,339 +427,234 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
 
   return (
     <Card className="border-0 shadow-lg">
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-xl">Ingest Job-Proposal Pair</CardTitle>
-            <CardDescription className="mt-1">
-              Submit historical Job, Proposal, and Member data to build retrieval and style profile memory.
+      <CardHeader className="space-y-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-2">
+            <CardTitle className="text-xl">Candidate Console</CardTitle>
+            <CardDescription>
+              Build candidate memory, manage grounded evidence, and ingest historical cases into the library.
             </CardDescription>
           </div>
-          <div className="flex rounded-lg border bg-muted p-0.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={mode === "form" ? "default" : "ghost"}
-              className="rounded-md"
-              onClick={() => setMode("form")}
-            >
-              Form
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" asChild>
+              <Link href="/pairs">Open Library</Link>
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={mode === "json" ? "default" : "ghost"}
-              className="rounded-md"
-              onClick={() => setMode("json")}
-            >
-              Paste JSON
+            <Button type="button" onClick={createNewCandidate}>
+              <Plus className="h-4 w-4" />
+              New Candidate
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={mode === "html" ? "default" : "ghost"}
-              className="rounded-md"
-              onClick={() => setMode("html")}
-            >
-              Paste HTML
+            <Button type="button" variant="destructive" onClick={onDeleteCandidate} disabled={!selectedProfile || isWorking}>
+              <Trash2 className="h-4 w-4" />
+              Delete Candidate
             </Button>
           </div>
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          {profileOptions.map((profile) => (
+            <Button
+              key={profile._id}
+              type="button"
+              size="sm"
+              variant={selectedCandidateId === profile.candidateId ? "default" : "outline"}
+              onClick={() => selectCandidate(profile.candidateId)}
+            >
+              {profile.displayName} #{profile.candidateId}
+            </Button>
+          ))}
+          {!candidateExists ? (
+            <Badge variant="secondary">Draft candidate #{workspaceCandidateId}</Badge>
+          ) : null}
+          {profileOptions.length === 0 ? <Badge variant="outline">No candidates yet</Badge> : null}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant={mode === "profile" ? "default" : "outline"} onClick={() => setMode("profile")}>
+            Candidate Profile
+          </Button>
+          <Button type="button" size="sm" variant={mode === "evidence" ? "default" : "outline"} onClick={() => setMode("evidence")}>
+            Candidate Evidence
+          </Button>
+          <Button type="button" size="sm" variant={mode === "case" ? "default" : "outline"} onClick={() => setMode("case")}>
+            Historical Case
+          </Button>
+        </div>
       </CardHeader>
+
       <CardContent>
-        {mode === "json" ? (
-          <Form {...jsonForm}>
-            <form onSubmit={jsonForm.handleSubmit(onJsonSubmit)} className="space-y-4">
-              <FormField
-                control={jsonForm.control}
-                name="rawJson"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Paste full JSON payload</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        name={field.name}
-                        ref={field.ref}
-                        value={field.value ?? ""}
-                        onBlur={field.onBlur}
-                        onChange={(event) => field.onChange(event.target.value)}
-                        rows={16}
-                        placeholder={'{\n  "job": { ... },\n  "proposal": { ... },\n  "member": { ... }\n}'}
-                        className="font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full">
-                Parse & Load into Form
-              </Button>
-            </form>
-          </Form>
-        ) : mode === "html" ? (
-          <Form {...htmlForm}>
-            <form onSubmit={htmlForm.handleSubmit(onHtmlSubmit)} className="space-y-4">
-              <FormField
-                control={htmlForm.control}
-                name="rawHtml"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Paste Upwork Job HTML</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        value={field.value ?? ""}
-                        rows={16}
-                        placeholder="<html>...</html>"
-                        className="font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full">
-                Parse HTML & Load Job
-              </Button>
-            </form>
-          </Form>
-        ) : (
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onFormSubmit)} className="space-y-6">
-              {/* Member Selector */}
-              <Card className="transition-shadow hover:shadow-md">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-semibold">Member</CardTitle>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="gap-1 text-sm text-primary"
-                      onClick={() => {
-                        resetNewMemberForm();
-                        setNewMemberOpen(true);
-                      }}
-                    >
-                      <Plus className="h-4 w-4" /> New
-                    </Button>
-                  </div>
-                  <CardDescription>
-                    {members.length > 0
-                      ? "Select a member to submit with this ingestion."
-                      : "No members ingested yet — add one to get started."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {members.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {members.map((m) => (
-                        <Button
-                          key={m.memberId}
-                          type="button"
-                          size="sm"
-                          variant={selectedMemberId === m.memberId ? "default" : "outline"}
-                          onClick={() => selectMember(m.memberId)}
-                        >
-                          {m.memberName || `#${m.memberId}`}
-                          {m.memberLocation ? ` (${m.memberLocation})` : ""}
+        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div className="rounded-2xl border bg-muted/20 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Workspace</p>
+              <h3 className="mt-2 text-xl font-semibold">
+                {selectedProfile?.displayName ?? `New Candidate #${workspaceCandidateId}`}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {selectedProfile
+                  ? selectedProfile.positioningSummary
+                  : "Create the candidate profile first, then add evidence and historical cases against this workspace."}
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tone</p>
+                  <p className="mt-2 text-lg font-semibold capitalize">
+                    {selectedProfile?.toneProfile ?? profileForm.watch("toneProfile")}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Evidence</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {selectedProfile?.activeEvidenceCount ?? 0} active
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Case-derived Signals</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {selectedProfile?.historicalEvidenceCount ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-background p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Updated</p>
+                  <p className="mt-2 text-sm font-medium">
+                    {selectedProfile ? formatTimestamp(selectedProfile.updatedAt) : "Not saved yet"}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(selectedProfile?.coreDomains ?? profileForm.watch("coreDomains")).map((domain) => (
+                  <Badge key={domain} variant="outline">
+                    {domain}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">Candidate Evidence</p>
+                  <p className="text-sm text-muted-foreground">Manage authored evidence blocks attached to this candidate.</p>
+                </div>
+                <Badge variant="secondary">{candidateEvidenceBlocks.length}</Badge>
+              </div>
+              <div className="mt-4 space-y-3">
+                {candidateEvidenceBlocks.length === 0 ? (
+                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                    No candidate-authored evidence blocks yet.
+                  </p>
+                ) : (
+                  candidateEvidenceBlocks.map((block) => (
+                    <div key={block._id} className="rounded-xl border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            <Badge>{block.type}</Badge>
+                            <Badge variant="outline">Confidence {block.confidence.toFixed(2)}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{block.text}</p>
+                        </div>
+                        <Button type="button" size="icon" variant="ghost" onClick={() => onDeleteEvidenceBlock(block._id)}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {block.tags.map((tag) => (
+                          <Badge key={`${block._id}-${tag}`} variant="secondary">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {block.techStack.map((tech) => (
+                          <Badge key={`${block._id}-${tech}`} variant="outline">
+                            {tech}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Click <strong>+ New</strong> above to add a member.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
 
-              {/* New Member Dialog */}
-              <Dialog open={newMemberOpen} onOpenChange={setNewMemberOpen}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add New Member</DialogTitle>
-                    <DialogDescription>
-                      Enter the member details. They will be saved when you submit the ingestion.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label htmlFor="nm-id" className="text-sm font-medium">Member ID *</label>
-                        <Input
-                          id="nm-id"
-                          type="number"
-                          value={newMember.id || ""}
-                          onChange={(e) => setNewMember((p) => ({ ...p, id: Number(e.target.value) }))}
-                          placeholder="e.g. 20"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label htmlFor="nm-name" className="text-sm font-medium">Name</label>
-                        <Input
-                          id="nm-name"
-                          value={newMember.name}
-                          onChange={(e) => setNewMember((p) => ({ ...p, name: e.target.value }))}
-                          placeholder="Roman Belskiy"
-                        />
-                      </div>
+          <div className="rounded-2xl border p-5">
+            {mode === "profile" ? (
+              <Form {...profileForm}>
+                <form className="space-y-5" onSubmit={profileForm.handleSubmit(onSubmitProfile)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">{candidateExists ? "Edit Candidate Profile" : "Create Candidate Profile"}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        The candidate profile is the source of truth for positioning and style.
+                      </p>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-1.5">
-                        <label htmlFor="nm-loc" className="text-sm font-medium">Location</label>
-                        <Input
-                          id="nm-loc"
-                          value={newMember.location}
-                          onChange={(e) => setNewMember((p) => ({ ...p, location: e.target.value }))}
-                          placeholder="UA"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label htmlFor="nm-jss" className="text-sm font-medium">JSS (0-100)</label>
-                        <Input
-                          id="nm-jss"
-                          type="number"
-                          value={newMember.jss || ""}
-                          onChange={(e) => setNewMember((p) => ({ ...p, jss: Number(e.target.value) }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label htmlFor="nm-badge" className="text-sm font-medium">Talent Badge</label>
-                        <Input
-                          id="nm-badge"
-                          value={newMember.talentBadge}
-                          onChange={(e) => setNewMember((p) => ({ ...p, talentBadge: e.target.value }))}
-                          placeholder="Top Rated Plus"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1.5"
-                        onClick={() => setNewMember((p) => ({ ...p, agency: !p.agency }))}
-                      >
-                        <Badge variant={newMember.agency ? "default" : "outline"} className="cursor-pointer select-none px-3 py-1">
-                          Agency: {newMember.agency ? "Yes" : "No"}
-                        </Badge>
-                      </button>
-                      {newMember.agency && (
-                        <Input
-                          value={newMember.agencyName}
-                          onChange={(e) => setNewMember((p) => ({ ...p, agencyName: e.target.value }))}
-                          placeholder="Agency name"
-                          className="max-w-[200px]"
-                        />
-                      )}
-                    </div>
+                    <Badge variant="outline">Candidate #{workspaceCandidateId}</Badge>
                   </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setNewMemberOpen(false)} disabled={isCreatingMember}>Cancel</Button>
-                    <Button type="button" onClick={saveNewMember} disabled={isCreatingMember}>
-                      {isCreatingMember ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Add Member
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
 
-              {/* Job & Proposal side by side */}
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <Card className="transition-shadow hover:shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">Job</CardTitle>
-                    <CardDescription>Client context, scope, and source job description.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="job.jobLink"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Job Link</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="https://www.upwork.com/freelance-jobs/apply/..." />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="job.clientLocation"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Client Location</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="US" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <FormField
-                        control={form.control}
-                        name="job.clientReview"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Client Review (0-5)</FormLabel>
-                            <FormControl>
-                              <Input {...field} type="number" step="0.1" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="job.clientReviewAmount"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Review Count</FormLabel>
-                            <FormControl>
-                              <Input {...field} type="number" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="job.clientTotalSpent"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Total Spent ($)</FormLabel>
-                            <FormControl>
-                              <Input {...field} type="number" step="0.01" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
+                  <div className="grid gap-4 md:grid-cols-2">
                     <FormField
-                      control={form.control}
-                      name="job.type"
+                      control={profileForm.control}
+                      name="candidateId"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Project Type</FormLabel>
+                          <FormLabel>Candidate ID</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="number" readOnly />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="displayName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Display Name</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Roman Belskiy" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={profileForm.control}
+                    name="positioningSummary"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Positioning Summary</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            rows={7}
+                            placeholder="Senior full-stack engineer focused on MVP delivery, architecture ownership, product thinking, and high-signal communication..."
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <FormField
+                      control={profileForm.control}
+                      name="toneProfile"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tone Profile</FormLabel>
                           <FormControl>
                             <div className="flex flex-wrap gap-2">
-                              {projectTypes.map((type) => (
+                              {toneOptions.map((tone) => (
                                 <Button
-                                  key={type.value}
+                                  key={tone}
                                   type="button"
-                                  variant={field.value === type.value ? "default" : "outline"}
-                                  onClick={() => field.onChange(type.value)}
+                                  size="sm"
+                                  variant={field.value === tone ? "default" : "outline"}
+                                  onClick={() => field.onChange(tone)}
                                 >
-                                  {type.label}
+                                  {tone}
                                 </Button>
                               ))}
                             </div>
@@ -689,11 +665,11 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                     />
 
                     <FormField
-                      control={form.control}
-                      name="job.title"
+                      control={profileForm.control}
+                      name="preferredCtaStyle"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Job Title</FormLabel>
+                          <FormLabel>Preferred CTA Style</FormLabel>
                           <FormControl>
                             <Input {...field} />
                           </FormControl>
@@ -701,182 +677,245 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                         </FormItem>
                       )}
                     />
+                  </div>
 
-                    <FormField
-                      control={form.control}
-                      name="job.skills"
-                      render={() => (
-                        <FormItem>
-                          <FormLabel>Skills</FormLabel>
-                          <FormControl>
-                            <div className="space-y-2">
-                              <div className="flex gap-2">
-                                <Input
-                                  value={skillInput}
-                                  onChange={(event) => setSkillInput(event.target.value)}
-                                  placeholder="Add skill and press Enter"
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      addSkill();
-                                    }
-                                  }}
-                                />
-                                <Button type="button" variant="secondary" onClick={addSkill}>
-                                  Add
-                                </Button>
-                              </div>
-                              {skills.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {skills.map((skill) => (
-                                    <Badge
-                                      key={skill}
-                                      variant="secondary"
-                                      className="cursor-pointer gap-1 pr-1.5 hover:bg-destructive/10 hover:text-destructive"
-                                      onClick={() => removeSkill(skill)}
-                                    >
-                                      {skill} <span className="text-[10px] leading-none">x</span>
-                                    </Badge>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <div className="space-y-3">
+                    <FormLabel>Core Domains</FormLabel>
+                    <div className="flex gap-2">
+                      <Input
+                        value={domainInput}
+                        onChange={(event) => setDomainInput(event.target.value)}
+                        placeholder="SaaS, Healthcare, AI..."
+                      />
+                      <Button type="button" variant="outline" onClick={addDomain}>
+                        Add
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {profileForm.watch("coreDomains").map((domain) => (
+                        <div key={domain} className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm">
+                          <span>{domain}</span>
+                          <button type="button" className="text-muted-foreground" onClick={() => removeDomain(domain)}>
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <FormMessage>{profileForm.formState.errors.coreDomains?.message}</FormMessage>
+                  </div>
 
+                  <div className="grid gap-4 md:grid-cols-2">
                     <FormField
-                      control={form.control}
-                      name="job.text"
+                      control={profileForm.control}
+                      name="seniority"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Job Description</FormLabel>
+                          <FormLabel>Seniority</FormLabel>
                           <FormControl>
-                            <Textarea {...field} rows={8} placeholder="Full job description..." />
+                            <Input {...field} placeholder="Senior / Lead" />
                           </FormControl>
-                          <FormMessage />
                         </FormItem>
                       )}
                     />
-                  </CardContent>
-                </Card>
+                    <FormField
+                      control={profileForm.control}
+                      name="availability"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Availability</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="30 hrs/week" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                <Card className="transition-shadow hover:shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">Proposal</CardTitle>
-                    <CardDescription>Outcome signals and the full proposal body.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={profileForm.control}
+                      name="location"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Location</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Kyiv, Ukraine" />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notes</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Founder-friendly, strong architecture ownership..." />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <FormField
-                        control={form.control}
-                        name="proposal.price"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Price</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="500.00" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                  <Button type="submit" disabled={isWorking}>
+                    {profileForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {candidateExists ? "Save Profile" : "Create Candidate"}
+                  </Button>
+                </form>
+              </Form>
+            ) : null}
+
+            {mode === "evidence" ? (
+              <Form {...evidenceForm}>
+                <form className="space-y-5" onSubmit={evidenceForm.handleSubmit(onSubmitEvidence)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Add Candidate Evidence</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Paste grounded notes about projects, tech depth, outcomes, and ownership.
+                      </p>
+                    </div>
+                    <Badge variant="outline">Candidate #{workspaceCandidateId}</Badge>
+                  </div>
+
+                  <FormField
+                    control={evidenceForm.control}
+                    name="candidateId"
+                    render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Member ID (from Member tab)</FormLabel>
+                        <FormLabel>Candidate ID</FormLabel>
                         <FormControl>
-                          <Input
-                            value={selectedMemberId > 0 ? String(selectedMemberId) : ""}
-                            readOnly
-                            placeholder="Select Member ID in Member tab"
+                          <Input {...field} type="number" readOnly />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={evidenceForm.control}
+                    name="rawEvidenceText"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Raw Evidence Notes</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            rows={12}
+                            placeholder="Built scalable SaaS MVPs in Next.js and Node.js, owned architecture decisions, handled stakeholder communication, and shipped production integrations..."
                           />
                         </FormControl>
+                        <FormMessage />
                       </FormItem>
+                    )}
+                  />
+
+                  <Button type="submit" disabled={isWorking || !candidateExists}>
+                    {evidenceForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Ingest Evidence
+                  </Button>
+                </form>
+              </Form>
+            ) : null}
+
+            {mode === "case" ? (
+              <Form {...historicalForm}>
+                <form className="space-y-5" onSubmit={historicalForm.handleSubmit(onSubmitHistoricalCase)}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Ingest Historical Case</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Add a job and its real proposal so the library can extract signals, fragments, and clusters.
+                      </p>
                     </div>
+                    <Badge variant="outline">Candidate #{workspaceCandidateId}</Badge>
+                  </div>
 
-                    <div className="flex flex-wrap gap-4">
-                      <FormField
-                        control={form.control}
-                        name="proposal.viewed"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <BooleanBadgeField label="Viewed" value={field.value} onChange={field.onChange} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="proposal.interview"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <BooleanBadgeField label="Interview" value={field.value} onChange={field.onChange} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="proposal.offer"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <BooleanBadgeField label="Offer" value={field.value} onChange={field.onChange} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="proposal.agency"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormControl>
-                              <BooleanBadgeField label="Agency" value={field.value} onChange={field.onChange} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                  <FormField
+                    control={historicalForm.control}
+                    name="candidateId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Candidate ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="number" readOnly />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                    <FormField
-                      control={form.control}
-                      name="proposal.text"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Proposal Text</FormLabel>
-                          <FormControl>
-                            <Textarea {...field} rows={8} placeholder="Full proposal text..." />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                </Card>
-              </div>
+                  <FormField
+                    control={historicalForm.control}
+                    name="jobTitle"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Title</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Senior Full-Stack Developer for SaaS MVP" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              <Button
-                type="submit"
-                className="w-full h-11 text-base font-semibold shadow-md"
-                disabled={form.formState.isSubmitting}
-              >
-                {form.formState.isSubmitting ? (
-                  <>
-                    <Loader2 className={cn("mr-2 h-4 w-4 animate-spin")} />
-                    Ingesting...
-                  </>
-                ) : (
-                  "Submit Ingestion"
-                )}
-              </Button>
-            </form>
-          </Form>
-        )}
+                  <FormField
+                    control={historicalForm.control}
+                    name="jobDescription"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Job Description</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} rows={9} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={historicalForm.control}
+                    name="proposalText"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Historical Proposal</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} rows={9} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    {(["reply", "interview", "hired"] as const).map((fieldName) => (
+                      <Button
+                        key={fieldName}
+                        type="button"
+                        size="sm"
+                        variant={historicalForm.watch(fieldName) ? "default" : "outline"}
+                        onClick={() =>
+                          historicalForm.setValue(fieldName, !historicalForm.watch(fieldName), {
+                            shouldDirty: true,
+                            shouldValidate: true
+                          })
+                        }
+                      >
+                        {fieldName}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <Button type="submit" disabled={isWorking || !candidateExists}>
+                    {historicalForm.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Ingest Historical Case
+                  </Button>
+                </form>
+              </Form>
+            ) : null}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

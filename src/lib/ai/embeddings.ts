@@ -1,10 +1,15 @@
 import OpenAI from "openai";
 import { getRequiredOpenAIApiKey } from "./openai-config";
+import { normalizeTokenUsage, type StepTokenUsage } from "./telemetry";
 
 export interface EmbeddingsClient {
   embeddings: {
     create: (params: { model: string; input: string }) => Promise<{
       data: Array<{ embedding: number[] }>;
+      usage?: {
+        prompt_tokens?: number;
+        total_tokens?: number;
+      };
     }>;
   };
 }
@@ -14,12 +19,22 @@ export interface GenerateEmbeddingOptions {
   model?: string;
 }
 
+export interface EmbeddingTelemetry {
+  model: string;
+  tokenUsage?: StepTokenUsage;
+}
+
+export interface GenerateEmbeddingResult {
+  vector: number[];
+  telemetry: EmbeddingTelemetry;
+}
+
 const defaultModel = "text-embedding-3-small";
 
-export async function generateEmbedding(
+export async function generateEmbeddingWithTelemetry(
   input: string,
   options: GenerateEmbeddingOptions = {}
-): Promise<number[]> {
+): Promise<GenerateEmbeddingResult> {
   if (!input.trim()) {
     throw new Error("Input text cannot be empty.");
   }
@@ -41,5 +56,19 @@ export async function generateEmbedding(
     throw new Error("OpenAI embeddings API returned an empty payload.");
   }
 
-  return firstVector;
+  return {
+    vector: firstVector,
+    telemetry: {
+      model,
+      tokenUsage: normalizeTokenUsage(response.usage) ?? undefined
+    }
+  };
+}
+
+export async function generateEmbedding(
+  input: string,
+  options: GenerateEmbeddingOptions = {}
+): Promise<number[]> {
+  const result = await generateEmbeddingWithTelemetry(input, options);
+  return result.vector;
 }

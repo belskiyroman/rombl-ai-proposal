@@ -1,160 +1,361 @@
-# Multi-Agent System Specification: "ProposalGen MVP"
+# Structured Proposal Engine
 
-This file describes the architecture, roles, tools, and interactions of the AI agents within the Proposal Generation System. The system is designed as a RAG-based, multi-agent orchestrator built with TypeScript, LangGraph.js, and Convex.
+This file is the source-of-truth architecture note for the current project.
 
-## 1. Context & Ecostack
+## 1. Product Goal
 
-* **Goal:** Automate high-quality, persona-aware project proposals based on past successful pairs.
-* **Core Stack:** TypeScript, LangGraph.js (Orchestration), Convex (Database, Vector Search, Actions), OpenAI (LLM).
-* **Frontend:** Next.js with **shadcn/ui + Tailwind CSS** for rapid prototyping of the dashboard.
-* **Integration (Future):** A **Chrome Extension** will act as the primary ingestion and deployment tool, scraping job listings from DOM and inserting generated proposals directly into the target website's text fields.
+The system generates grounded freelance proposals from three controlled inputs:
 
-## 2. Overall Workflow Overview
+- structured understanding of the new job
+- atomic candidate evidence blocks
+- curated reusable patterns from a deduplicated historical case library
 
-The system operates in two distinct phases:
+The goal is not to copy past proposals. The goal is to reuse high-signal patterns and factual evidence while avoiding fabrication, generic filler, and near-duplicate output.
 
-1.  **Phase 1: Learning (Ingestion):** Input successful `job-proposal` pairs -> Analyze & Profile (Analyzer) -> Vectorize -> Store in Convex DB (Vector + Structured Metadata).
-2.  **Phase 2: Generation (Retrieval & Generation):**
-    * *Trigger:* Chrome Extension scrapes new job data -> Sends to Convex Action.
-    * *Flow:* Perform Vector Search (RAG) -> Generate Draft (Writer) -> Review & Refine (Critic loop) -> Produce Final Proposal.
-    * *Deployment:* Final Proposal sent back to Chrome Extension for insertion.
+## 2. Stack Boundary
 
-## 3. Detailed Agent Specification
+- Next.js App Router + React 19
+- Convex for storage, vector search, actions, and queries
+- LangGraph.js for online orchestration
+- OpenAI via LangChain/OpenAI wrappers
+- Zod for structured contracts
+- Vitest for tests
 
-### Agent 1: Agent-Analyzer
+## 3. Core Data Model
 
-* **Role:** Semantic Data Extractor & Style Profiler.
-* **Purpose:** To convert unstructured text (potentially raw DOM scrapes or user inputs) into clean, structured data for effective RAG and precise persona mimicry.
-* **Responsibilities:**
-    * (Ingestion/Generation) Extract technical stack, core requirements, budget constraints, and client pain points from the job description. *Note: Must be robust enough to handle noise from scraped HTML text.*
-    * (Ingestion) Analyze your unique writing style from past proposals to create a dynamic "Style Profile."
-* **System Prompt (Persona):**
-    > "You are an expert in semantic analysis and text profiling within the global tech and design sectors. Your superpower is distilling essence from noise. Your goal is to convert potentially raw, messy text from job listings (which may come from web scraping) and successful proposals into clear, structured data. You focus on facts: required technologies, materials, specific terminology, and the nuances of the author's unique Tone of Voice (e.g., 'concise, uses active verbs, focuses on ROI, explains technical concepts simply'). Your output must be structured JSON."
-* **Structured Output (Zod Schema hint):**
-    ```typescript
-    z.object({
-      tech_stack: z.array(z.string()),
-      writing_style_analysis: z.object({
-        formality: z.number().min(1).max(10),
-        enthusiasm: z.number().min(1).max(10),
-        key_vocabulary: z.array(z.string()),
-        sentence_structure: z.string()
-      }),
-      project_constraints: z.array(z.string())
-    })
-    ```
-* **Tools:** None. Operates as a pure LLM function.
+### Candidate layer
 
----
+- `candidate_profiles`
+  - canonical candidate identity and positioning
+  - stores `candidateId`, `displayName`, `positioningSummary`, `toneProfile`, `coreDomains`, `preferredCtaStyle`, and metadata
 
-### Agent 2: Agent-Writer
+- `candidate_evidence_blocks`
+  - atomic, grounded fact units used during generation
+  - source is either `candidate_profile` or `case_inference`
+  - types: `project`, `responsibility`, `tech`, `impact`, `domain`, `achievement`
+  - each block stores text, tags, structured fields, confidence, active state, and embedding
 
-* **Role:** Persona-Aware Proposal Composer.
-* **Purpose:** To synthesize a compelling, structured proposal for a *new* job by strictly mimicking your *past* successful writing persona, using retrieved examples as direct templates.
-* **Responsibilities:**
-    * Utilize Few-Shot prompting, treating retrieved past proposals as high-fidelity structural templates.
-    * Strictly adhere to the Style Profile provided by the Agent-Analyzer.
-    * Tailor the proposal structure to address the specific client pain points identified in the new job.
-* **System Prompt (Persona):**
-    > "You are a master copywriter specialized in crafting winning B2B proposals and pitches on global freelance platforms. Your main objective is to write a compelling proposal for a new job description, strictly mimicking the provided author's writing persona. You do not use generic AI phrases like 'I am writing to...'; you use the Few-Shot examples as direct structural and tonal templates. The proposal must address the client's needs immediately. The output should be ready for easy copy-pasting or automated insertion."
-* **Input Data (Passed by Orchestrator):**
-    1.  Cleaned text of the new job description.
-    2.  RAG Context: 3-4 examples of *similar* past proposal texts.
-    3.  Style Profile from Agent-Analyzer.
-    4.  Author identity constraint (`authorName`) from selected profile (or latest profile when auto mode is used).
-* **Output Data:** Clean Markdown or Plain Text (optimized for web text fields).
-* **Tools:** None.
+### Historical case library
 
----
+- `historical_cases`
+  - canonical case record
+  - stores raw and normalized job/proposal text
+  - stores structured `jobExtract`, `proposalExtract`, quality scores, optional outcomes, cluster membership, canonical flag
+  - stores three embeddings:
+    - `rawJobEmbedding`
+    - `jobSummaryEmbedding`
+    - `needsEmbedding`
 
-### Agent 3: Agent-Critic
+- `proposal_clusters`
+  - dedupe control for exact and near-duplicate proposals
+  - stores representative case, cluster size, fingerprint, quality score, and duplicate method
 
-* **Role:** QA & Style Consistency Editor.
-* **Purpose:** To review the generated draft, ensuring it meets all new job requirements and perfectly matches your Style Profile. Acts as the safeguard before final output.
-* **Responsibilities:**
-    * Validate adherence to the new job requirements.
-    * Check Tone of Voice and Style Profile match.
-    * Identify and remove any generic AI "hallucinations" or fluff.
-    * Provide actionable feedback to the Agent-Writer for refinement.
-* **System Prompt (Persona):**
-    > "You are a rigorous yet constructive editor-in-chief. Your goal is to ensure the generated proposal is flawless before deployment. You check the draft against three strict criteria: 1) Accuracy: Have we met all client requirements? 2) Authenticity: Does it perfectly match the author's Voice (Tone, vocabulary)? 3) Quality: Is it free of AI fluff or hallucinations? If the draft fails, you provide detailed, actionable critique to the Agent-Writer. You never approve mediocrity."
-* **Structured Output (Zod Schema hint):**
-    ```typescript
-    z.object({
-      status: z.enum(["APPROVED", "NEEDS_REVISION"]),
-      critique_points: z.array(z.string()).nullable() // null when APPROVED
-    })
-    ```
-* **Tools:** None.
+- `proposal_fragments`
+  - reusable `opening`, `proof`, and `closing` components extracted from canonical cases
+  - stores text, tags, quality metrics, retrieval eligibility, and embedding
 
-## 4. Orchestration & State (LangGraph.js)
+### Observability
 
-The agent interactions are orchestrated by **LangGraph.js**, which manages the system State within a Convex Action. The State includes:
+- `generation_runs`
+  - immutable saved generation snapshots
+  - stores:
+    - job input
+    - job understanding
+    - selected evidence
+    - proposal plan
+    - retrieved ids and retrieved-context snapshot
+    - draft history
+    - critique history
+    - copy-risk result
+    - telemetry
+    - final proposal
 
-* `newJobDescription`: Cleaned input text.
-* `authorName`: Preferred signer/identity derived from selected member profile.
-* `ragContext`: Retrieved past proposal pairs.
-* `styleProfile`: Analyzer's output.
-* `proposalDraft`: Writer's latest output.
-* `criticFeedback`: Critic's latest output.
+There are no legacy V1 tables in the current schema.
 
-LangGraph.js will implement the logic of the iterative loop: *Writer -> Critic -> (if NEEDS_REVISION) -> Writer -> Critic -> ...* until APPROVED or a maximum iteration limit is reached.
+## 4. Candidate Management
 
-## 5. Frontend UI Architecture (shadcn/ui)
+Candidate management is handled through `convex/profiles.ts`.
 
-The frontend must follow a strict `shadcn/ui` architecture.
+### Public APIs
 
-* **UI Wrapper Source of Truth:** All reusable primitives must live in `src/components/ui`.
-* **No Direct Radix in Feature Components:** Files like `src/components/IngestionForm.tsx` and `src/components/ExtractionResults.tsx` must never import `@radix-ui/react-*` directly.
-* **Form System:** Use the `Form` wrapper suite in `src/components/ui/form.tsx` (`Form`, `FormField`, `FormItem`, `FormLabel`, `FormControl`, `FormMessage`) with `react-hook-form` + `zodResolver`.
-* **Toast System:** Use shadcn `Toast` + `Toaster` + `use-toast` (`src/components/ui/toast.tsx`, `src/components/ui/toaster.tsx`, `src/hooks/use-toast.ts`).
-* **Class Composition:** Use `cn` from `src/lib/utils.ts` for dynamic and merged class names.
-* **Feature Composition:** Phase 1 UI should be composed from `src/components/IngestionForm.tsx` and `src/components/ExtractionResults.tsx` with card-based sectioning.
-* **Generation Member Selector:** `src/components/GenerationForm.tsx` must use `api.members.listMembers` and allow choosing a profile (`Auto (Latest)` or explicit member) before proposal generation.
+- `profiles.listCandidateProfiles`
+- `profiles.getNextCandidateId`
+- `profiles.getCandidateProfile`
+- `profiles.getCandidateProfileSummary`
+- `profiles.listCandidateEvidenceBlocks`
+- `profiles.upsertCandidateProfile`
+- `profiles.ingestCandidateEvidence`
+- `profiles.deleteCandidateEvidenceBlock`
+- `profiles.deleteCandidate`
 
-## 6. Recent Functional Changes (Mar 2026)
+### Behavior
 
-### 6.1 Input Normalization Safety Layer
+- Candidate creation and updates write to `candidate_profiles`
+- Candidate-authored evidence writes to `candidate_evidence_blocks`
+- Candidate deletion cascades through evidence, fragments, historical cases, clusters, and saved generation runs
+- The UI treats candidate selection as the workspace context; users do not manually manage separate member entities anymore
 
-Generation and embedding paths now normalize job descriptions before AI calls:
+## 5. Historical Case Library
 
-* Detect likely HTML payloads.
-* Reuse Upwork parser when available.
-* Fallback to server-safe HTML stripping (scripts/styles/templates/svg/canvas removed).
-* Decode common HTML entities and normalize whitespace.
-* Apply hard truncation to prevent token overflow (`MAX_JOB_DESCRIPTION_CHARS = 12000`).
+Historical case processing is handled through `convex/cases.ts` and `src/lib/proposal-engine/offline.ts`.
 
-This is implemented via shared utility:
-* `src/lib/ai/job-description-normalizer.ts`
+### Public APIs
 
-Applied in:
-* `convex/generate.ts` (`createProposal`)
-* `convex/jobs.ts` (`ingestJobProposalPair`)
-* `convex/embeddings.ts` (`generateJobEmbedding`)
+- `cases.ingestHistoricalCase`
+- `cases.updateHistoricalCase`
+- `cases.deleteHistoricalCase`
+- `cases.promoteHistoricalCase`
 
-### 6.2 Profile-Scoped Generation
+### Processing flow
 
-`createProposal` now supports explicit member targeting:
+Each historical case is processed as:
 
-* New optional action arg: `preferredMemberId`.
-* If set, generation loads latest style profile and author name for that `memberId`.
-* If not set, generation falls back to latest global style profile/name.
+1. normalize job and proposal text
+2. extract `JobExtract`
+3. extract `ProposalExtract`
+4. score quality with rubric
+5. compare against canonical proposals for dedupe/clustering
+6. select or update cluster representative
+7. create reusable fragments
+8. derive seed evidence blocks from the case
+9. generate embeddings
+10. persist all artifacts
 
-Supporting queries in `convex/generate.ts`:
-* `getLatestStyleProfileByMemberId`
-* `getLatestPreferredAuthorNameByMemberId`
+### Deduplication
 
-### 6.3 Author Identity Guardrail
+- exact duplicates collapse into the same cluster
+- near-duplicates are detected with deterministic cosine similarity over normalized proposal text
+- threshold: `>= 0.92`
+- only one canonical representative per cluster is retrieval-eligible by default
 
-Writer and Critic prompts now enforce author identity consistency:
+Representative selection prefers, in order:
 
-* Writer prompt includes strict name constraint using `authorName`.
-* Critic prompt validates name usage against the same constraint.
-* If `authorName` is unavailable, prompts explicitly disallow inventing personal names.
+1. higher outcome score
+2. lower genericness
+3. higher specificity
+4. shorter cleaner text
 
-Purpose:
-* Prevent hallucinated sign-offs such as using a wrong first name.
+## 6. Structured Contracts
 
-### 6.4 Convex Function Reference Compliance
+### Job extraction
 
-Internal action/query calls in `convex/generate.ts` use Convex function references (`anyApi.generate.*`) with `ctx.runQuery`, avoiding direct local-function invocation inside Convex actions.
+`JobExtract` contains:
+
+- `projectType`
+- `domain`
+- `requiredSkills`
+- `optionalSkills`
+- `senioritySignals`
+- `deliverables`
+- `constraints`
+- `stack`
+- `softSignals`
+- `jobLengthBucket`
+- `clientNeeds`
+- `summary`
+
+### Proposal extraction
+
+`ProposalExtract` contains:
+
+- `hook`
+- `valueProposition`
+- `experienceClaims`
+- `techMapping`
+- `proofPoints`
+- `cta`
+- `tone`
+- `lengthBucket`
+- `specificityScore`
+- `genericnessScore`
+
+### Online job understanding
+
+`JobUnderstanding` contains:
+
+- `jobSummary`
+- `clientNeeds`
+- `mustHaveSkills`
+- `niceToHaveSkills`
+- `projectRiskFlags`
+- `proposalStrategy`
+
+### Proposal plan
+
+`ProposalPlan` contains:
+
+- `openingAngle`
+- ordered `mainPoints`
+- `selectedEvidenceIds`
+- `selectedFragmentIds`
+- `avoid`
+- `ctaStyle`
+
+### Critique
+
+`DraftCritique` contains:
+
+- rubric scores for `relevance`, `specificity`, `credibility`, `tone`, `clarity`, `ctaStrength`
+- `issues`
+- `revisionInstructions`
+- `approvalStatus`
+- `copyRisk`
+
+## 7. Retrieval Strategy
+
+Retrieval is not a single raw-text RAG query.
+
+### Lane A: similar canonical cases
+
+- search both `jobSummaryEmbedding` and `needsEmbedding`
+- union results
+- rerank with weighted score:
+  - semantic similarity `0.45`
+  - must-skill overlap `0.20`
+  - domain/project-type match `0.15`
+  - quality score `0.10`
+  - outcome score `0.10`
+- enforce cluster diversity
+- final output: exactly `3` canonical cases
+
+### Lane B: reusable proposal fragments
+
+- retrieve fragments independently of full-case retrieval
+- final output:
+  - `2` openings
+  - `3` proof fragments
+  - `1` closing
+- at most one fragment per cluster per fragment type
+
+### Lane C: candidate evidence
+
+- retrieve evidence blocks from `candidate_evidence_blocks`
+- enforce coverage:
+  - at least `2` project/impact blocks
+  - at least `1` tech block
+  - at least `1` responsibility/domain block
+  - max `2` blocks of the same type
+- final output: exactly `4` evidence blocks
+
+## 8. Online Generation Graph
+
+The online graph lives in `src/lib/proposal-engine/graph.ts`.
+
+### Nodes
+
+1. `job_understanding`
+2. `retrieve_context`
+3. `select_evidence`
+4. `plan_proposal`
+5. `write_draft`
+6. `critique`
+7. `revise_if_needed`
+
+### Loop behavior
+
+- first pass writes one draft
+- critique evaluates it
+- if critique returns `NEEDS_REVISION`, run `revise_if_needed`
+- stop after `2` total critique passes
+
+### Grounding rule
+
+The writer may use only:
+
+- the new job input
+- selected candidate evidence
+- selected reusable fragments and canonical patterns
+
+The writer must not invent:
+
+- projects
+- domain expertise
+- outcomes
+- certifications
+- team size
+- unsupported technical claims
+
+## 9. Copy-Risk Guardrail
+
+The engine uses deterministic copy-risk scoring before approval.
+
+Implemented signals:
+
+- paragraph cosine similarity
+- full-draft trigram overlap
+
+Default thresholds:
+
+- paragraph cosine `>= 0.96`
+- trigram overlap `>= 0.35`
+
+If triggered, critique must treat the draft as revision-worthy.
+
+## 10. Model Split
+
+### Fast model
+
+Used for:
+
+- job extraction
+- proposal extraction
+- quality scoring
+- candidate evidence extraction
+- job understanding
+- evidence selection
+- proposal planning
+- critique
+
+### Stronger model
+
+Used for:
+
+- first draft writing
+- rewrite after critique
+
+## 11. Current Routes
+
+- `/ingest`
+  - candidate workspace
+  - create, edit, and delete candidates
+  - ingest and manage candidate-authored evidence
+  - ingest historical cases
+
+- `/pairs`
+  - canonical case library
+  - create, inspect, edit, delete, and promote historical cases
+  - review duplicate clusters
+
+- `/generate`
+  - proposal generation console
+  - shows retrieved signals, selected evidence, proposal plan, evaluator trace, telemetry, and final proposal
+
+- `/generate/history`
+  - saved run history
+
+- `/generate/history/[id]`
+  - immutable saved run detail
+
+## 12. Contributor Rules
+
+When working in this repo:
+
+1. Treat the current schema as the only source of truth.
+2. Do not reintroduce legacy style-profile retrieval or raw proposal RAG as a primary path.
+3. Reuse the structured proposal-engine schemas before changing prompts or storage.
+4. Preserve cluster-aware retrieval diversity.
+5. Preserve evidence-grounded writing rules.
+6. Preserve deterministic copy-risk checks.
+7. Keep saved generation runs immutable.
+
+## 13. Deferred Feature
+
+Multi-draft generation plus final ranking is intentionally deferred.
+
+The current shipped path is:
+
+- single draft
+- critique
+- up to two total passes
+
+If implementation and this document diverge, update this file to match the shipped behavior.

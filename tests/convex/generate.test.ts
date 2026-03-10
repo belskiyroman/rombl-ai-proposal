@@ -1,224 +1,219 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { runCreateProposal, runRetrieveRagContext } from "@/convex/generate";
+import { buildGenerationRunDocument } from "@/convex/generate";
 
-describe("runRetrieveRagContext", () => {
-  it("embeds input, runs vector search, and returns top 3 joined rag pairs", async () => {
-    const embed = vi.fn().mockResolvedValue([0.12, 0.34, 0.56]);
-    const vectorSearch = vi.fn().mockResolvedValue([
-      { _id: "raw_2", _score: 0.96 },
-      { _id: "raw_4", _score: 0.93 },
-      { _id: "raw_1", _score: 0.9 },
-      { _id: "raw_3", _score: 0.87 }
-    ]);
-
-    const getRawJob = vi.fn(async (id: string) => ({
-      _id: id,
-      text: `Job text for ${id}`,
-      title: `Title ${id}`,
-      techStack: ["React", "Node.js"]
-    }));
-    const getProposalByRawJobId = vi.fn(async (id: string) => ({
-      _id: `proposal-${id}`,
-      text: `Proposal text for ${id}`,
-      styleProfileId: `style-${id}`
-    }));
-    const getStyleProfileById = vi.fn(async (id: string) => ({
-      _id: id,
-      writingStyleAnalysis: {
-        formality: 6,
-        enthusiasm: 7,
-        keyVocabulary: ["ROI", "timeline"],
-        sentenceStructure: "direct"
-      }
-    }));
-
-    const ragContext = await runRetrieveRagContext(
-      {
-        newJobDescription: "Need a TypeScript AI architect",
-        limit: 3
+describe("buildGenerationRunDocument", () => {
+  it("persists execution trace, candidate snapshot, retrieved context, and telemetry", () => {
+    const document = buildGenerationRunDocument({
+      candidateId: 7,
+      jobInput: {
+        title: "Senior Next.js Engineer",
+        description: "Need someone to own the architecture and ship the MVP."
       },
-      {
-        embed,
-        vectorSearch,
-        getRawJob,
-        getProposalByRawJobId,
-        getStyleProfileById
-      }
-    );
-
-    expect(embed).toHaveBeenCalledWith("Need a TypeScript AI architect");
-    expect(vectorSearch).toHaveBeenCalledWith([0.12, 0.34, 0.56], 3);
-    expect(ragContext).toHaveLength(3);
-    expect(ragContext[0]).toMatchObject({
-      jobText: "Job text for raw_2",
-      proposalText: "Proposal text for raw_2",
-      similarity: 0.96
-    });
-    expect(ragContext[2].jobText).toBe("Job text for raw_1");
-  });
-});
-
-describe("runCreateProposal", () => {
-  it("orchestrates retrieval + style profile lookup + graph run and returns approved proposal", async () => {
-    const callOrder: string[] = [];
-
-    const retrieveRagContext = vi.fn(async () => {
-      callOrder.push("retrieval");
-      return [
-        {
-          jobText: "Build AI proposal system",
-          proposalText: "I can deliver this quickly.",
-          similarity: 0.93
-        }
-      ];
-    });
-
-    const getGlobalStyleProfile = vi.fn(async () => {
-      callOrder.push("style");
-      return {
-        tech_stack: ["TypeScript", "LangGraph"],
-        writing_style_analysis: {
-          formality: 7,
-          enthusiasm: 6,
-          key_vocabulary: ["ROI", "timeline"],
-          sentence_structure: "concise"
-        },
-        project_constraints: ["tight budget"]
-      };
-    });
-
-    const runGraph = vi.fn(async (initialState) => {
-      callOrder.push("graph");
-      expect(initialState.ragContext).toHaveLength(1);
-      expect(initialState.styleProfile?.tech_stack).toEqual(["TypeScript", "LangGraph"]);
-
-        return {
-          ...initialState,
-          proposalDraft: "Final proposal body",
-          criticFeedback: {
-          status: "APPROVED",
-          critique_points: null
+      createdAt: 123456789,
+      result: {
+        finalProposal: "Final grounded proposal",
+        approvalStatus: "APPROVED",
+        critiqueHistory: [
+          {
+            rubric: {
+              relevance: 0.9,
+              specificity: 0.8,
+              credibility: 0.9,
+              tone: 0.8,
+              clarity: 0.9,
+              ctaStrength: 0.8
+            },
+            issues: [],
+            revisionInstructions: [],
+            approvalStatus: "APPROVED",
+            copyRisk: {
+              triggered: false,
+              maxParagraphCosine: 0.1,
+              trigramOverlap: 0.05,
+              matchedCaseIds: [],
+              matchedFragmentIds: [],
+              reasons: []
+            }
+          }
+        ],
+        executionTrace: ["job_understanding", "retrieve_context", "write_draft", "critique"],
+        selectedEvidence: [
+          {
+            id: "ev_1",
+            reason: "Direct MVP ownership evidence",
+            text: "Built and launched multiple MVPs with Next.js and Node.js.",
+            type: "project"
+          }
+        ],
+        retrievedContext: {
+          similarCases: [
+            {
+              _id: "case_1",
+              clusterId: "cluster_1",
+              candidateId: 7,
+              canonical: true,
+              jobTitle: "MVP Platform Build",
+              jobExtract: {
+                projectType: "MVP",
+                domain: "SaaS",
+                requiredSkills: ["Next.js"],
+                optionalSkills: ["AWS"],
+                stack: ["Next.js", "Node.js"],
+                clientNeeds: ["ownership"],
+                summary: "Build an MVP with strong ownership."
+              },
+              proposalExtract: {
+                hook: "I can own this MVP end-to-end.",
+                valueProposition: "Strong ownership and shipping speed.",
+                proofPoints: ["Built SaaS MVPs"],
+                tone: "consultative"
+              },
+              quality: {
+                rubric: {
+                  relevance: 0.9,
+                  specificity: 0.8,
+                  credibility: 0.9,
+                  tone: 0.8,
+                  clarity: 0.9,
+                  ctaStrength: 0.8
+                },
+                overall: 0.86,
+                humanScore: 0.8,
+                specificityScore: 0.82,
+                genericnessScore: 0.18
+              },
+              outcome: {
+                reply: true,
+                interview: true,
+                hired: false
+              }
+            }
+          ],
+          fragments: {
+            openings: [
+              {
+                _id: "fragment_1",
+                clusterId: "cluster_1",
+                candidateId: 7,
+                fragmentType: "opening",
+                text: "I can own this MVP end-to-end.",
+                tags: ["ownership"],
+                specificityScore: 0.8,
+                genericnessScore: 0.2,
+                qualityScore: 0.85,
+                retrievalEligible: true
+              }
+            ],
+            proofs: [],
+            closings: []
           },
-          revisionCount: 1,
-          executionTrace: ["writer", "critic", "writer", "critic"]
-        };
-    });
-
-    const result = await runCreateProposal(
-      {
-        newJobDescription: "Need a TypeScript AI architect",
-        maxRevisions: 2
-      },
-      {
-        retrieveRagContext,
-        getGlobalStyleProfile,
-        runGraph
-      }
-    );
-
-    expect(callOrder).toEqual(["retrieval", "style", "graph"]);
-    expect(result.finalProposal).toBe("Final proposal body");
-    expect(result.executionTrace).toEqual(["writer", "critic", "writer", "critic"]);
-    expect(result.criticStatus).toBe("APPROVED");
-  });
-
-  it("fails when no global style profile exists", async () => {
-    await expect(
-      runCreateProposal(
-        {
-          newJobDescription: "Need proposal generation"
+          evidenceCandidates: [
+            {
+              _id: "evidence_1",
+              candidateId: 7,
+              type: "project",
+              text: "Built SaaS MVPs in production.",
+              tags: ["MVP"],
+              techStack: ["Next.js"],
+              domains: ["SaaS"],
+              confidence: 0.95,
+              active: true,
+              source: "candidate_profile"
+            }
+          ]
         },
-        {
-          retrieveRagContext: vi.fn().mockResolvedValue([]),
-          getGlobalStyleProfile: vi.fn().mockResolvedValue(null),
-          runGraph: vi.fn()
-        }
-      )
-    ).rejects.toThrow("No style profile found for proposal generation.");
-  });
-
-  it("normalizes html before retrieval embedding and graph state", async () => {
-    const embed = vi.fn().mockResolvedValue([0.44, 0.55, 0.66]);
-    const vectorSearch = vi.fn().mockResolvedValue([{ _id: "raw_1", _score: 0.91 }]);
-    const getRawJob = vi.fn().mockResolvedValue({
-      _id: "raw_1",
-      text: "Need React + Convex engineer",
-      title: "React engineer",
-      techStack: ["React", "Convex"]
-    });
-    const getProposalByRawJobId = vi.fn().mockResolvedValue({
-      _id: "proposal_1",
-      text: "I can ship this quickly with clean architecture.",
-      styleProfileId: "style_1"
-    });
-    const getStyleProfileById = vi.fn().mockResolvedValue({
-      _id: "style_1",
-      writingStyleAnalysis: {
-        formality: 7,
-        enthusiasm: 6,
-        keyVocabulary: ["timeline", "delivery"],
-        sentenceStructure: "concise"
-      }
-    });
-
-    const runGraph = vi.fn(async (initialState) => ({
-      ...initialState,
-      proposalDraft: "Final proposal body",
-      criticFeedback: { status: "APPROVED" as const, critique_points: null },
-      executionTrace: ["writer", "critic"]
-    }));
-
-    const htmlInput = `
-      <html>
-        <head>
-          <title>React + Convex Platform Build</title>
-          <script>window.bigPayload = "${"x".repeat(2000)}";</script>
-        </head>
-        <body>
-          <div data-test="Description">
-            <p>Need React + Convex engineer to ship an MVP dashboard.</p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    await runCreateProposal(
-      {
-        newJobDescription: htmlInput,
-        maxRevisions: 2
-      },
-      {
-        retrieveRagContext: (args) =>
-          runRetrieveRagContext(args, {
-            embed,
-            vectorSearch,
-            getRawJob,
-            getProposalByRawJobId,
-            getStyleProfileById
-          }),
-        getGlobalStyleProfile: vi.fn().mockResolvedValue({
-          tech_stack: [],
-          writing_style_analysis: {
-            formality: 7,
-            enthusiasm: 6,
-            key_vocabulary: ["timeline", "delivery"],
-            sentence_structure: "concise"
+        jobUnderstanding: {
+          jobSummary: "Need an engineer to own MVP architecture and delivery.",
+          clientNeeds: ["ownership", "MVP"],
+          mustHaveSkills: ["Next.js"],
+          niceToHaveSkills: ["AWS"],
+          projectRiskFlags: ["scope risk"],
+          proposalStrategy: {
+            tone: "consultative",
+            length: "medium",
+            focus: ["ownership", "execution clarity"]
+          }
+        },
+        proposalPlan: {
+          openingAngle: "Mirror the ownership need and lead with MVP fit.",
+          mainPoints: ["MVP experience", "Architecture ownership"],
+          selectedEvidenceIds: ["ev_1"],
+          selectedFragmentIds: ["fragment_1"],
+          avoid: ["generic phrasing"],
+          ctaStyle: "Short CTA"
+        },
+        draftHistory: ["Draft 1"],
+        copyRisk: {
+          triggered: false,
+          maxParagraphCosine: 0.1,
+          trigramOverlap: 0.05,
+          matchedCaseIds: [],
+          matchedFragmentIds: [],
+          reasons: []
+        },
+        stepTelemetry: [
+          {
+            step: "job_understanding",
+            stage: "job_understanding",
+            kind: "llm",
+            startedAt: 100,
+            finishedAt: 200,
+            durationMs: 100,
+            model: "gpt-5-mini",
+            tokenUsage: {
+              inputTokens: 120,
+              outputTokens: 40,
+              totalTokens: 160,
+              reasoningTokens: 0
+            }
+          }
+        ],
+        telemetrySummary: {
+          totalSteps: 1,
+          totalDurationMs: 100,
+          totalInputTokens: 120,
+          totalOutputTokens: 40,
+          totalTokens: 160,
+          totalReasoningTokens: 0
+        },
+        state: {
+          candidateProfile: {
+            candidateId: 7,
+            displayName: "Roman",
+            positioningSummary: "Senior full-stack engineer focused on MVP delivery.",
+            toneProfile: "consultative",
+            coreDomains: ["SaaS"],
+            preferredCtaStyle: "Short CTA"
           },
-          project_constraints: []
-        }),
-        runGraph
+          jobInput: {
+            title: "Senior Next.js Engineer",
+            description: "Need someone to own the architecture and ship the MVP."
+          },
+          jobUnderstanding: null,
+          retrievedContext: null,
+          selectedEvidence: [],
+          proposalPlan: null,
+          currentDraft: "",
+          draftHistory: [],
+          latestCritique: null,
+          critiqueHistory: [],
+          copyRisk: null,
+          finalProposal: "",
+          revisionCount: 0,
+          maxRevisions: 2,
+          executionTrace: [],
+          stepTelemetry: []
+        }
       }
-    );
+    });
 
-    const embeddedInput = embed.mock.calls[0]?.[0];
-    expect(embeddedInput).toContain("React + Convex Platform Build");
-    expect(embeddedInput).toContain("Need React + Convex engineer");
-    expect(embeddedInput).not.toContain("<html");
-    expect(embeddedInput).not.toContain("window.bigPayload");
-
-    const graphInput = runGraph.mock.calls[0]?.[0];
-    expect(graphInput.newJobDescription).toBe(embeddedInput);
-    expect(graphInput.newJobDescription).not.toContain("<");
+    expect(document.candidateSnapshot.displayName).toBe("Roman");
+    expect(document.executionTrace).toEqual(["job_understanding", "retrieve_context", "write_draft", "critique"]);
+    expect(document.retrievedContextSnapshot.similarCases).toHaveLength(1);
+    expect(document.stepTelemetry[0]?.tokenUsage?.totalTokens).toBe(160);
+    expect(document.retrievedCaseIds).toHaveLength(1);
+    expect(document.retrievedFragmentIds).toEqual(["fragment_1"]);
+    expect(document.retrievedEvidenceIds).toEqual(["evidence_1"]);
   });
 });

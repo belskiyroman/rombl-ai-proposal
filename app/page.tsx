@@ -9,12 +9,14 @@ export default function HomePage() {
           R
         </div>
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">Rombl AI Proposal</h1>
-          <p className="text-sm text-muted-foreground">RAG-based Proposal Generation System</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Structured Proposal Engine</h1>
+          <p className="text-sm text-muted-foreground">
+            Grounded proposal generation powered by canonical cases, fragments, and candidate evidence
+          </p>
         </div>
-        <Link href="/ingest">
+        <Link href="/generate">
           <Button size="lg" className="shadow-md mt-2">
-            Open Ingestion Dashboard
+            Open Generator
           </Button>
         </Link>
       </div>

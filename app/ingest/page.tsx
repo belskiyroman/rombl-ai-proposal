@@ -5,13 +5,6 @@ import { useState } from "react";
 import { ExtractionResults, type ExtractionResultsData } from "@/src/components/ExtractionResults";
 import { IngestionForm } from "@/src/components/IngestionForm";
 
-/**
- * Knowledge Ingestion page.
- *
- * Provides the IngestionForm to submit historical job-proposal-member data
- * and displays ExtractionResults (tech stack + style profile) after
- * successful ingestion.
- */
 export default function IngestPage() {
     const [results, setResults] = useState<ExtractionResultsData | null>(null);
 
@@ -25,10 +18,10 @@ export default function IngestPage() {
                     </div>
                     <div>
                         <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                            Knowledge Ingestion
+                            Structured Proposal Engine
                         </h1>
                         <p className="text-sm text-muted-foreground">
-                            Submit historical job-proposal pairs to build your writing profile
+                            Build candidate memory, evidence blocks, and canonical case-library artifacts
                         </p>
                     </div>
                 </div>

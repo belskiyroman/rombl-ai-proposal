@@ -23,3 +23,5 @@ coverage/
 .idea
 
 convex/_generated
+# LangGraph API
+.langgraph_api

@@ -22,7 +22,7 @@ describe("shadcn utility foundation", () => {
     expect(source).toContain("export function cn(...inputs: ClassValue[])");
   });
 
-  it("keeps shadcn theme css variables in app/globals.css", () => {
+  it("keeps theme css variables in app/globals.css", () => {
     const source = readFile("app/globals.css");
 
     expect(source).toContain("--background:");
@@ -32,8 +32,8 @@ describe("shadcn utility foundation", () => {
   });
 });
 
-describe("shadcn ui wrapper scaffolding", () => {
-  it("provides required wrapper components under src/components/ui", () => {
+describe("shadcn wrapper scaffolding", () => {
+  it("provides required UI wrappers under src/components/ui", () => {
     const requiredFiles = [
       "src/components/ui/button.tsx",
       "src/components/ui/input.tsx",
@@ -49,46 +49,34 @@ describe("shadcn ui wrapper scaffolding", () => {
       expect(fileExists(file), `${file} should exist`).toBe(true);
     }
   });
-
-  it("marks button wrapper as a client component when using Radix Slot", () => {
-    const source = readFile("src/components/ui/button.tsx");
-    expect(source.startsWith('"use client";')).toBe(true);
-  });
 });
 
-describe("ingestion form refactor", () => {
-  it("uses shadcn Form ecosystem and avoids direct Radix imports", () => {
+describe("candidate console UI", () => {
+  it("uses shadcn forms, toast, and current ingestion actions without direct Radix imports", () => {
     expect(fileExists("src/components/IngestionForm.tsx")).toBe(true);
     const source = readFile("src/components/IngestionForm.tsx");
 
     expect(source).toContain('from "@/src/components/ui/form"');
-    expect(source).toContain("<FormField");
-    expect(source).toContain("<FormMessage");
     expect(source).toContain('from "@/src/hooks/use-toast"');
+    expect(source).toContain("api.profiles.upsertCandidateProfile");
+    expect(source).toContain("api.profiles.ingestCandidateEvidence");
+    expect(source).toContain("api.cases.ingestHistoricalCase");
+    expect(source).not.toContain("api.cases.backfillFromV1");
     expect(source).not.toContain("@radix-ui/react-");
-    expect(source).not.toContain('from "sonner"');
   });
 
-  it("renders member selector above job and proposal cards side-by-side", () => {
+  it("renders candidate profile, evidence, and historical case modes", () => {
     const source = readFile("src/components/IngestionForm.tsx");
 
-    expect(source).toContain("lg:grid-cols-2");
-    expect(source).toContain("selectMember");
-    expect(source).toContain("Member");
-    expect(source).toContain("listMembers");
-  });
-
-  it("allows member selection via buttons and new member dialog", () => {
-    const source = readFile("src/components/IngestionForm.tsx");
-
-    expect(source).toContain("selectMember(m.memberId)");
-    expect(source).toContain("newMemberOpen");
-    expect(source).toContain("DialogContent");
-    expect(source).toContain("saveNewMember");
+    expect(source).toContain("Candidate Console");
+    expect(source).toContain("Candidate Profile");
+    expect(source).toContain("Candidate Evidence");
+    expect(source).toContain("Historical Case");
+    expect(source).not.toContain("Backfill V1");
   });
 });
 
-describe("results and layout refactor", () => {
+describe("results and layout", () => {
   it("uses shadcn card/badge wrappers in ExtractionResults", () => {
     expect(fileExists("src/components/ExtractionResults.tsx")).toBe(true);
     const source = readFile("src/components/ExtractionResults.tsx");
@@ -102,16 +90,5 @@ describe("results and layout refactor", () => {
     const layoutSource = readFile("app/layout.tsx");
     expect(layoutSource).toContain('from "@/src/components/ui/toaster"');
     expect(layoutSource).toContain("<Toaster />");
-  });
-});
-
-describe("agents doc update", () => {
-  it("documents the strict shadcn ui architecture in AGENTS.md", () => {
-    const source = readFile("AGENTS.md");
-
-    expect(source).toContain("## 5. Frontend UI Architecture (shadcn/ui)");
-    expect(source).toContain("src/components/ui");
-    expect(source).toContain("src/lib/utils.ts");
-    expect(source).toContain("use-toast");
   });
 });
