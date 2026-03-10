@@ -3,88 +3,145 @@
 import { Badge } from "@/src/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
 
-export interface WritingStyleAnalysis {
-  formality: number;
-  enthusiasm: number;
-  keyVocabulary: string[];
-  sentenceStructure: string;
-}
-
-export interface ExtractionResultsData {
-  rawJobId: string;
-  styleProfileId: string;
-  processedProposalId: string;
-  executionTrace: string[];
-  writingStyleAnalysis?: WritingStyleAnalysis;
-  techStack?: string[];
-}
+export type ExtractionResultsData =
+  | {
+      operation: "profile";
+      candidateId: number;
+      profileId: string;
+      evidenceCount: number;
+    }
+  | {
+      operation: "evidence";
+      candidateId: number;
+      evidenceCount: number;
+    }
+  | {
+      operation: "case";
+      historicalCaseId: string;
+      clusterId: string | null;
+      canonical: boolean;
+      fragmentIds: string[];
+      evidenceIds: string[];
+      jobExtract?: {
+        projectType: string;
+        domain: string;
+        stack: string[];
+        clientNeeds: string[];
+        summary: string;
+      } | null;
+      proposalExtract?: {
+        hook: string;
+        tone: string;
+        valueProposition: string;
+      } | null;
+      quality?: {
+        overall: number;
+        humanScore: number;
+        specificityScore: number;
+        genericnessScore: number;
+      } | null;
+    }
+  | {
+      operation: "backfill";
+      importedCount: number;
+      canonicalCount: number;
+    };
 
 interface ExtractionResultsProps {
   data: ExtractionResultsData;
 }
 
-function ScoreBar({ label, score, max = 10 }: { label: string; score: number; max?: number }) {
-  const pct = Math.max(0, Math.min(100, Math.round((score / max) * 100)));
-
+function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-foreground">{label}</span>
-        <span className="tabular-nums text-muted-foreground">
-          {score}/{max}
-        </span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-        <div
-          className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+    <div className="rounded-lg border bg-muted/20 p-4">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-lg font-semibold">{value}</p>
     </div>
   );
 }
 
 export function ExtractionResults({ data }: ExtractionResultsProps) {
-  const { techStack, writingStyleAnalysis, executionTrace, rawJobId, styleProfileId, processedProposalId } = data;
+  if (data.operation === "profile") {
+    return (
+      <Card className="border-0 shadow-lg">
+        <CardHeader>
+          <CardTitle>Candidate Profile Saved</CardTitle>
+          <CardDescription>Profile and derived evidence blocks are now available for V2 retrieval.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <MetricCard label="Candidate" value={data.candidateId} />
+          <MetricCard label="Profile ID" value={data.profileId} />
+          <MetricCard label="Evidence Blocks" value={data.evidenceCount} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (data.operation === "evidence") {
+    return (
+      <Card className="border-0 shadow-lg">
+        <CardHeader>
+          <CardTitle>Evidence Ingested</CardTitle>
+          <CardDescription>Candidate evidence is now searchable for grounded proposal generation.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <MetricCard label="Candidate" value={data.candidateId} />
+          <MetricCard label="Evidence Blocks" value={data.evidenceCount} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (data.operation === "backfill") {
+    return (
+      <Card className="border-0 shadow-lg">
+        <CardHeader>
+          <CardTitle>Backfill Complete</CardTitle>
+          <CardDescription>Legacy V1 data was transformed into canonical V2 case-library artifacts.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <MetricCard label="Imported Cases" value={data.importedCount} />
+          <MetricCard label="Canonical Cases" value={data.canonicalCount} />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">Extraction Results</h2>
-
-      <Card className="transition-shadow hover:shadow-md">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Created Records</CardTitle>
-          <CardDescription>IDs of documents stored by the ingestion workflow</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-2 text-sm sm:grid-cols-3">
+      <Card className="border-0 shadow-lg">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <span className="text-muted-foreground">Raw Job:</span>{" "}
-              <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{rawJobId}</code>
+              <CardTitle>Historical Case Ingested</CardTitle>
+              <CardDescription>Case, cluster, fragments, and seed evidence were generated for V2.</CardDescription>
             </div>
-            <div>
-              <span className="text-muted-foreground">Style Profile:</span>{" "}
-              <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{styleProfileId}</code>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Processed Proposal:</span>{" "}
-              <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{processedProposalId}</code>
-            </div>
+            <Badge variant={data.canonical ? "default" : "outline"}>
+              {data.canonical ? "Canonical" : "Variant"}
+            </Badge>
           </div>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <MetricCard label="Case ID" value={data.historicalCaseId} />
+          <MetricCard label="Cluster ID" value={data.clusterId ?? "New"} />
+          <MetricCard label="Fragments" value={data.fragmentIds.length} />
         </CardContent>
       </Card>
 
-      {techStack && techStack.length > 0 ? (
-        <Card className="transition-shadow hover:shadow-md">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Extracted Tech Stack</CardTitle>
-            <CardDescription>Technologies identified by the Analyzer</CardDescription>
+      {data.jobExtract ? (
+        <Card className="border-0 shadow-lg">
+          <CardHeader>
+            <CardTitle>Job Understanding Snapshot</CardTitle>
+            <CardDescription>Structured metadata extracted from the ingested historical job.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">{data.jobExtract.summary}</p>
             <div className="flex flex-wrap gap-2">
-              {techStack.map((tech) => (
-                <Badge key={tech} variant="secondary" className="text-sm">
-                  {tech}
+              <Badge>{data.jobExtract.projectType}</Badge>
+              <Badge variant="secondary">{data.jobExtract.domain}</Badge>
+              {data.jobExtract.stack.map((item) => (
+                <Badge key={item} variant="outline">
+                  {item}
                 </Badge>
               ))}
             </div>
@@ -92,53 +149,34 @@ export function ExtractionResults({ data }: ExtractionResultsProps) {
         </Card>
       ) : null}
 
-      {writingStyleAnalysis ? (
-        <Card className="transition-shadow hover:shadow-md">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Writing Style Analysis</CardTitle>
-            <CardDescription>Tone and structure extracted from the proposal text</CardDescription>
+      {data.proposalExtract ? (
+        <Card className="border-0 shadow-lg">
+          <CardHeader>
+            <CardTitle>Proposal Pattern Snapshot</CardTitle>
+            <CardDescription>Key persuasive components extracted from the historical proposal.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ScoreBar label="Formality" score={writingStyleAnalysis.formality} />
-              <ScoreBar label="Enthusiasm" score={writingStyleAnalysis.enthusiasm} />
-            </div>
-
-            <div className="h-px w-full bg-border" />
-
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium text-foreground">Key Vocabulary</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {writingStyleAnalysis.keyVocabulary.map((word) => (
-                  <Badge key={word} variant="outline" className="text-xs">
-                    {word}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            <div className="h-px w-full bg-border" />
-
-            <div className="space-y-1">
-              <h4 className="text-sm font-medium text-foreground">Sentence Structure</h4>
-              <p className="text-sm leading-relaxed text-muted-foreground">{writingStyleAnalysis.sentenceStructure}</p>
+          <CardContent className="space-y-3">
+            <p className="text-sm font-medium">Hook</p>
+            <p className="text-sm text-muted-foreground">{data.proposalExtract.hook}</p>
+            <div className="flex flex-wrap gap-2">
+              <Badge>{data.proposalExtract.tone}</Badge>
+              <Badge variant="outline">{data.proposalExtract.valueProposition}</Badge>
             </div>
           </CardContent>
         </Card>
       ) : null}
 
-      {executionTrace.length > 0 ? (
-        <Card className="transition-shadow hover:shadow-md">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Execution Trace</CardTitle>
-            <CardDescription>Ingestion pipeline steps completed</CardDescription>
+      {data.quality ? (
+        <Card className="border-0 shadow-lg">
+          <CardHeader>
+            <CardTitle>Quality Signals</CardTitle>
+            <CardDescription>Stored quality scores used later during retrieval and ranking.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <ol className="list-inside list-decimal space-y-1 text-sm text-muted-foreground">
-              {executionTrace.map((step, index) => (
-                <li key={`${step}-${index}`}>{step}</li>
-              ))}
-            </ol>
+          <CardContent className="grid gap-4 md:grid-cols-4">
+            <MetricCard label="Overall" value={data.quality.overall.toFixed(2)} />
+            <MetricCard label="Human Score" value={data.quality.humanScore.toFixed(2)} />
+            <MetricCard label="Specificity" value={data.quality.specificityScore.toFixed(2)} />
+            <MetricCard label="Genericness" value={data.quality.genericnessScore.toFixed(2)} />
           </CardContent>
         </Card>
       ) : null}

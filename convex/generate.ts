@@ -1,4 +1,4 @@
-import { actionGeneric, anyApi, queryGeneric } from "convex/server";
+import { actionGeneric, anyApi, internalMutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 
 import { createOpenAIAgentRunners } from "../src/lib/ai/agents";
@@ -12,6 +12,10 @@ import {
   type ProposalGraphState,
   type RagContextItem
 } from "../src/lib/ai/state";
+import { createProposalEngineV2Runners } from "../src/lib/ai/v2/agents";
+import { generationJobInputSchema } from "../src/lib/ai/v2/schemas";
+import { runCreateProposalV2, runRetrieveProposalContextV2 } from "../src/lib/ai/v2/service";
+import { internal } from "./_generated/api";
 
 export interface CreateProposalArgs {
   newJobDescription: string;
@@ -454,3 +458,263 @@ export const createProposal = actionGeneric({
 
 // Backward compatible alias kept for existing callers.
 export const generateProposal = createProposal;
+
+const generationJobInputValidator = v.object({
+  title: v.optional(v.string()),
+  description: v.string()
+});
+
+const selectedEvidenceValidator = v.object({
+  id: v.string(),
+  reason: v.string(),
+  text: v.string(),
+  type: v.string()
+});
+
+const proposalPlanValidator = v.object({
+  openingAngle: v.string(),
+  mainPoints: v.array(v.string()),
+  selectedEvidenceIds: v.array(v.string()),
+  selectedFragmentIds: v.array(v.string()),
+  avoid: v.array(v.string()),
+  ctaStyle: v.string()
+});
+
+const copyRiskValidator = v.object({
+  triggered: v.boolean(),
+  maxParagraphCosine: v.float64(),
+  trigramOverlap: v.float64(),
+  matchedCaseIds: v.array(v.string()),
+  matchedFragmentIds: v.array(v.string()),
+  reasons: v.array(v.string())
+});
+
+const draftCritiqueValidator = v.object({
+  rubric: v.object({
+    relevance: v.float64(),
+    specificity: v.float64(),
+    credibility: v.float64(),
+    tone: v.float64(),
+    clarity: v.float64(),
+    ctaStrength: v.float64()
+  }),
+  issues: v.array(v.string()),
+  revisionInstructions: v.array(v.string()),
+  approvalStatus: v.union(v.literal("APPROVED"), v.literal("NEEDS_REVISION")),
+  copyRisk: copyRiskValidator
+});
+
+const jobUnderstandingValidator = v.object({
+  jobSummary: v.string(),
+  clientNeeds: v.array(v.string()),
+  mustHaveSkills: v.array(v.string()),
+  niceToHaveSkills: v.array(v.string()),
+  projectRiskFlags: v.array(v.string()),
+  proposalStrategy: v.object({
+    tone: v.union(
+      v.literal("concise"),
+      v.literal("consultative"),
+      v.literal("confident"),
+      v.literal("technical"),
+      v.literal("founder-like")
+    ),
+    length: v.union(v.literal("short"), v.literal("medium"), v.literal("long")),
+    focus: v.array(v.string())
+  })
+});
+
+export const insertGenerationRunV2Record = internalMutationGeneric({
+  args: {
+    document: v.object({
+      candidateId: v.float64(),
+      jobInput: generationJobInputValidator,
+      jobUnderstanding: jobUnderstandingValidator,
+      retrievedCaseIds: v.array(v.id("historical_cases")),
+      retrievedFragmentIds: v.array(v.id("proposal_fragments")),
+      retrievedEvidenceIds: v.array(v.id("candidate_evidence_blocks")),
+      selectedEvidence: v.array(selectedEvidenceValidator),
+      proposalPlan: proposalPlanValidator,
+      draftHistory: v.array(v.string()),
+      critiqueHistory: v.array(draftCritiqueValidator),
+      copyRisk: copyRiskValidator,
+      finalProposal: v.string(),
+      approvalStatus: v.union(v.literal("APPROVED"), v.literal("NEEDS_REVISION")),
+      createdAt: v.float64(),
+      updatedAt: v.float64()
+    })
+  },
+  handler: async (ctx, args) => {
+    return ctx.db.insert("generation_runs_v2", args.document);
+  }
+});
+
+export const createProposalV2 = actionGeneric({
+  args: {
+    candidateId: v.float64(),
+    jobInput: generationJobInputValidator,
+    maxRevisions: v.optional(v.number()),
+    embeddingModel: v.optional(v.string()),
+    fastModel: v.optional(v.string()),
+    reasoningModel: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    const parsedJobInput = generationJobInputSchema.parse(args.jobInput);
+    const runners = createProposalEngineV2Runners({
+      fastModel: args.fastModel,
+      reasoningModel: args.reasoningModel
+    });
+
+    const result = await runCreateProposalV2(
+      {
+        candidateId: args.candidateId,
+        jobInput: parsedJobInput,
+        maxRevisions: args.maxRevisions
+      },
+      {
+        loadCandidateProfile: (candidateId) =>
+          (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
+            candidateId: number;
+            displayName: string;
+            positioningSummary: string;
+            toneProfile: string;
+            coreDomains: string[];
+            preferredCtaStyle: string;
+          } | null>)(anyApi.profiles.getCandidateProfileSummary, {
+            candidateId
+          }),
+        retrieveContext: ({ candidateId, jobUnderstanding }) =>
+          runRetrieveProposalContextV2(
+            {
+              candidateId,
+              jobUnderstanding
+            },
+            {
+              embed: (input) =>
+                generateEmbedding(input, {
+                  model: args.embeddingModel
+                }),
+              searchHistoricalCaseSummaries: async (embedding, limit) => {
+                const matches = await ctx.vectorSearch("historical_cases", "by_job_summary_embedding", {
+                  vector: embedding,
+                  limit
+                });
+
+                return matches.map((match) => ({
+                  id: String(match._id),
+                  score: match._score
+                }));
+              },
+              searchHistoricalCaseNeeds: async (embedding, limit) => {
+                const matches = await ctx.vectorSearch("historical_cases", "by_needs_embedding", {
+                  vector: embedding,
+                  limit
+                });
+
+                return matches.map((match) => ({
+                  id: String(match._id),
+                  score: match._score
+                }));
+              },
+              searchProposalFragments: async (_fragmentType, embedding, limit) => {
+                const matches = await ctx.vectorSearch("proposal_fragments", "by_embedding", {
+                  vector: embedding,
+                  limit
+                });
+
+                return matches.map((match) => ({
+                  id: String(match._id),
+                  score: match._score
+                }));
+              },
+              searchCandidateEvidence: async (embedding, limit) => {
+                const matches = await ctx.vectorSearch("candidate_evidence_blocks", "by_embedding", {
+                  vector: embedding,
+                  limit
+                });
+
+                return matches.map((match) => ({
+                  id: String(match._id),
+                  score: match._score
+                }));
+              },
+              getHistoricalCasesByIds: (ids) =>
+                (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
+                  anyApi.library.getHistoricalCasesByIds,
+                  {
+                    ids: ids as never
+                  }
+                ),
+              getProposalFragmentsByIds: (ids) =>
+                (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
+                  anyApi.library.getProposalFragmentsByIds,
+                  {
+                    ids: ids as never
+                  }
+                ),
+              getCandidateEvidenceByIds: (ids) =>
+                (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
+                  anyApi.library.getCandidateEvidenceByIds,
+                  {
+                    ids: ids as never
+                  }
+                )
+            }
+          ),
+        graphDependencies: {
+          runners
+        }
+      }
+    );
+
+    const createdAt = Date.now();
+    const retrievedFragmentIds = [
+      ...result.retrievedContext.fragments.openings.map((item) => item._id),
+      ...result.retrievedContext.fragments.proofs.map((item) => item._id),
+      ...result.retrievedContext.fragments.closings.map((item) => item._id)
+    ];
+
+    const generationRunId = await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<string>)(
+      internal.generate.insertGenerationRunV2Record,
+      {
+        document: {
+          candidateId: args.candidateId,
+          jobInput: parsedJobInput,
+          jobUnderstanding: result.jobUnderstanding,
+          retrievedCaseIds: result.retrievedContext.similarCases.map((item) => item._id as never),
+          retrievedFragmentIds: retrievedFragmentIds as never,
+          retrievedEvidenceIds: result.retrievedContext.evidenceCandidates.map((item) => item._id as never),
+          selectedEvidence: result.selectedEvidence,
+          proposalPlan: result.proposalPlan,
+          draftHistory: result.draftHistory,
+          critiqueHistory: result.critiqueHistory,
+          copyRisk: result.copyRisk ?? {
+            triggered: false,
+            maxParagraphCosine: 0,
+            trigramOverlap: 0,
+            matchedCaseIds: [],
+            matchedFragmentIds: [],
+            reasons: []
+          },
+          finalProposal: result.finalProposal,
+          approvalStatus: result.approvalStatus,
+          createdAt,
+          updatedAt: createdAt
+        }
+      }
+    );
+
+    return {
+      generationRunId: String(generationRunId),
+      finalProposal: result.finalProposal,
+      approvalStatus: result.approvalStatus,
+      critiqueHistory: result.critiqueHistory,
+      executionTrace: result.executionTrace,
+      selectedEvidence: result.selectedEvidence,
+      retrievedContext: result.retrievedContext,
+      jobUnderstanding: result.jobUnderstanding,
+      proposalPlan: result.proposalPlan,
+      draftHistory: result.draftHistory,
+      copyRisk: result.copyRisk
+    };
+  }
+});

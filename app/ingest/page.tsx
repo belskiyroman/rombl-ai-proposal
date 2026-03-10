@@ -6,11 +6,8 @@ import { ExtractionResults, type ExtractionResultsData } from "@/src/components/
 import { IngestionForm } from "@/src/components/IngestionForm";
 
 /**
- * Knowledge Ingestion page.
- *
- * Provides the IngestionForm to submit historical job-proposal-member data
- * and displays ExtractionResults (tech stack + style profile) after
- * successful ingestion.
+ * V2 ingestion console for candidate profile, evidence, historical cases,
+ * and V1 backfill into the structured proposal engine.
  */
 export default function IngestPage() {
     const [results, setResults] = useState<ExtractionResultsData | null>(null);
@@ -25,10 +22,10 @@ export default function IngestPage() {
                     </div>
                     <div>
                         <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                            Knowledge Ingestion
+                            Structured Proposal Engine V2
                         </h1>
                         <p className="text-sm text-muted-foreground">
-                            Submit historical job-proposal pairs to build your writing profile
+                            Build candidate profile memory, evidence blocks, and canonical case-library artifacts
                         </p>
                     </div>
                 </div>

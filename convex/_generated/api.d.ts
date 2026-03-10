@@ -8,10 +8,13 @@
  * @module
  */
 
+import type * as cases from "../cases.js";
 import type * as embeddings from "../embeddings.js";
 import type * as generate from "../generate.js";
 import type * as jobs from "../jobs.js";
+import type * as library from "../library.js";
 import type * as members from "../members.js";
+import type * as profiles from "../profiles.js";
 
 import type {
   ApiFromModules,
@@ -20,10 +23,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  cases: typeof cases;
   embeddings: typeof embeddings;
   generate: typeof generate;
   jobs: typeof jobs;
+  library: typeof library;
   members: typeof members;
+  profiles: typeof profiles;
 }>;
 
 /**

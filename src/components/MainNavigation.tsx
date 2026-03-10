@@ -7,9 +7,9 @@ import { Button } from "@/src/components/ui/button";
 import { cn } from "@/src/lib/utils";
 
 const navigationItems = [
-  { href: "/pairs", label: "Knowledge Base" },
-  { href: "/ingest", label: "Add New Pair" },
-  { href: "/generate", label: "Generator" }
+  { href: "/pairs", label: "Library" },
+  { href: "/ingest", label: "Ingest" },
+  { href: "/generate", label: "Generate" }
 ] as const;
 
 export function MainNavigation() {

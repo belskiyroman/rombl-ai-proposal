@@ -13,44 +13,44 @@ function fileExists(relativePath: string): boolean {
 }
 
 describe("global navigation layout", () => {
-  it("adds top-level navigation links in root layout", () => {
+  it("adds the V2 library, ingest, and generate routes to navigation", () => {
     expect(fileExists("app/layout.tsx")).toBe(true);
     expect(fileExists("src/components/MainNavigation.tsx")).toBe(true);
 
     const layoutSource = readFile("app/layout.tsx");
     const navSource = readFile("src/components/MainNavigation.tsx");
 
-    expect(layoutSource).toContain("MainNavigation");
+    expect(layoutSource).toContain("Structured Proposal Engine V2");
     expect(navSource).toContain('"/pairs"');
     expect(navSource).toContain('"/ingest"');
     expect(navSource).toContain('"/generate"');
-    expect(navSource).toContain('variant="ghost"');
+    expect(navSource).toContain("Library");
+    expect(navSource).toContain("Generate");
   });
 });
 
-describe("pairs list UI foundation", () => {
-  it("provides shadcn table + skeleton wrappers", () => {
+describe("library UI foundation", () => {
+  it("keeps shadcn table + skeleton wrappers", () => {
     expect(fileExists("src/components/ui/table.tsx")).toBe(true);
     expect(fileExists("src/components/ui/skeleton.tsx")).toBe(true);
   });
 
-  it("implements pairs page with query, loading, empty, and row actions", () => {
+  it("implements the canonical library page with V2 queries and cluster review", () => {
     expect(fileExists("app/pairs/page.tsx")).toBe(true);
     const source = readFile("app/pairs/page.tsx");
 
-    expect(source).toContain('useQuery(api.jobs.getPairs');
-    expect(source).toContain("<Skeleton");
+    expect(source).toContain("api.profiles.listCandidateProfiles");
+    expect(source).toContain("api.library.listCanonicalCases");
+    expect(source).toContain("api.library.listClusters");
+    expect(source).toContain("Canonical Cases");
+    expect(source).toContain("Duplicate Clusters");
     expect(source).toContain("<Table");
     expect(source).toContain("<Badge");
-    expect(source).toContain("No pairs ingested yet");
-    expect(source).toContain('href="/ingest"');
-    expect(source).toContain("/generate?contextId=");
-    expect(source).toContain("Generate from this");
   });
 
-  it("provides generator placeholder page route", () => {
+  it("keeps the generator route available from the app shell", () => {
     expect(fileExists("app/generate/page.tsx")).toBe(true);
     const source = readFile("app/generate/page.tsx");
-    expect(source).toContain("Generator");
+    expect(source).toContain("Grounded Generator");
   });
 });
