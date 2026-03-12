@@ -38,18 +38,26 @@ describe("generation page routing + layout", () => {
 });
 
 describe("generation form", () => {
-  it("uses the generation action and candidate profile query", () => {
+  it("uses the generation action, progress session, and candidate profile query", () => {
     expect(fileExists("src/components/GenerationForm.tsx")).toBe(true);
+    expect(fileExists("src/components/GenerationProgressCard.tsx")).toBe(true);
     const source = readFile("src/components/GenerationForm.tsx");
+    const progressSource = readFile("src/components/GenerationProgressCard.tsx");
 
     expect(source).toContain("react-hook-form");
     expect(source).toContain("zodResolver");
     expect(source).toContain("api.generate.createProposal");
+    expect(source).toContain("api.generate.createGenerationProgress");
+    expect(source).toContain("api.generate.getGenerationProgress");
     expect(source).toContain("api.profiles.listCandidateProfiles");
+    expect(source).toContain("GenerationProgressCard");
     expect(source).toContain("<FormField");
     expect(source).toContain("<Textarea");
     expect(source).toContain("Generate Proposal");
     expect(source).toContain("Candidate ID");
+    expect(progressSource).toContain("Generation Progress");
+    expect(progressSource).toContain("proposalEngineStepOrder");
+    expect(progressSource).toContain("Open Saved Run");
   });
 });
 
