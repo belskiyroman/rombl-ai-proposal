@@ -115,6 +115,32 @@ const generationJobInputValidator = v.object({
   title: v.optional(v.string()),
   description: v.string()
 });
+const generationProgressStatusValidator = v.union(
+  v.literal("QUEUED"),
+  v.literal("RUNNING"),
+  v.literal("COMPLETED"),
+  v.literal("FAILED")
+);
+const generationProgressStepStatusValidator = v.union(
+  v.literal("RUNNING"),
+  v.literal("COMPLETED"),
+  v.literal("FAILED")
+);
+const generationProgressCurrentStepValidator = v.object({
+  step: v.string(),
+  label: v.string(),
+  attempt: v.float64(),
+  startedAt: v.float64()
+});
+const generationProgressStepValidator = v.object({
+  step: v.string(),
+  label: v.string(),
+  status: generationProgressStepStatusValidator,
+  attempt: v.float64(),
+  startedAt: v.float64(),
+  finishedAt: v.optional(v.float64()),
+  durationMs: v.optional(v.float64())
+});
 const jobUnderstandingValidator = v.object({
   jobSummary: v.string(),
   clientNeeds: v.array(v.string()),
@@ -334,6 +360,22 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["candidateId", "fragmentType", "retrievalEligible"]
     }),
+
+  generation_progress: defineTable({
+    candidateId: v.float64(),
+    jobInput: generationJobInputValidator,
+    status: generationProgressStatusValidator,
+    currentStep: v.optional(generationProgressCurrentStepValidator),
+    steps: v.array(generationProgressStepValidator),
+    startedAt: v.float64(),
+    updatedAt: v.float64(),
+    completedAt: v.optional(v.float64()),
+    totalDurationMs: v.optional(v.float64()),
+    errorMessage: v.optional(v.string()),
+    generationRunId: v.optional(v.id("generation_runs"))
+  })
+    .index("by_candidate_id_and_started_at", ["candidateId", "startedAt"])
+    .index("by_started_at", ["startedAt"]),
 
   generation_runs: defineTable({
     candidateId: v.float64(),

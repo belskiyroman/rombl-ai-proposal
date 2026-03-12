@@ -11,6 +11,7 @@ import {
 } from "./agents";
 import type { GenerationStepTelemetry } from "../ai/telemetry";
 import type { CopyRisk, DraftCritique, JobUnderstanding, ProposalPlan } from "./schemas";
+import type { ProposalEngineProgressEvent } from "./progress";
 import type { RetrievedContextBundle } from "./state";
 import type { ProposalEngineState } from "./state";
 
@@ -46,10 +47,18 @@ export interface ProposalEngineGraphDependencies {
     draft: string;
     retrievedContext: RetrievedContextBundle;
   }) => CopyRisk;
+  onProgress?: (event: ProposalEngineProgressEvent) => Promise<void> | void;
 }
 
 function appendTrace(state: ProposalEngineState, step: string): string[] {
   return [...state.executionTrace, step];
+}
+
+async function notifyProgress(
+  dependencies: ProposalEngineGraphDependencies,
+  event: ProposalEngineProgressEvent
+): Promise<void> {
+  await dependencies.onProgress?.(event);
 }
 
 function appendStepTelemetry(
@@ -79,6 +88,14 @@ async function jobUnderstandingNode(
   state: ProposalEngineState,
   dependencies: ProposalEngineGraphDependencies
 ): Promise<ProposalEngineState> {
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "job_understanding",
+    status: "started",
+    attempt: 1,
+    startedAt: progressStartedAt
+  });
+
   const jobUnderstanding = await dependencies.runners.understandJob.invokeWithTelemetry(
     buildJobUnderstandingPrompt({
       title: state.jobInput.title,
@@ -86,6 +103,16 @@ async function jobUnderstandingNode(
       candidateProfileSummary: state.candidateProfile.positioningSummary
     })
   );
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "job_understanding",
+    status: "completed",
+    attempt: 1,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
 
   return {
     ...state,
@@ -108,9 +135,27 @@ async function retrieveContextNode(
     throw new Error("retrieve_context requires jobUnderstanding.");
   }
 
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "retrieve_context",
+    status: "started",
+    attempt: 1,
+    startedAt: progressStartedAt
+  });
+
   const retrievedContext = await dependencies.retrieveContext({
     candidateId: state.candidateProfile.candidateId,
     jobUnderstanding: state.jobUnderstanding
+  });
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "retrieve_context",
+    status: "completed",
+    attempt: 1,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
   });
 
   return {
@@ -128,6 +173,14 @@ async function selectEvidenceNode(
   if (!state.jobUnderstanding || !state.retrievedContext) {
     throw new Error("select_evidence requires jobUnderstanding and retrievedContext.");
   }
+
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "select_evidence",
+    status: "started",
+    attempt: 1,
+    startedAt: progressStartedAt
+  });
 
   const evidenceCandidates = state.retrievedContext.evidenceCandidates.map((candidate) => ({
     id: candidate._id,
@@ -171,6 +224,16 @@ async function selectEvidenceNode(
       text: candidate.text,
       type: candidate.type
     }));
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "select_evidence",
+    status: "completed",
+    attempt: 1,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
 
   return {
     ...state,
@@ -192,6 +255,14 @@ async function planProposalNode(
   if (!state.jobUnderstanding || !state.retrievedContext) {
     throw new Error("plan_proposal requires jobUnderstanding and retrievedContext.");
   }
+
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "plan_proposal",
+    status: "started",
+    attempt: 1,
+    startedAt: progressStartedAt
+  });
 
   const selectedFragments = [
     ...state.retrievedContext.fragments.openings,
@@ -225,6 +296,16 @@ async function planProposalNode(
   const selectedFragmentIds = proposalPlan.output.selectedFragmentIds.filter((id) =>
     selectedFragments.some((fragment) => fragment._id === id)
   );
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "plan_proposal",
+    status: "completed",
+    attempt: 1,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
 
   return {
     ...state,
@@ -250,6 +331,14 @@ async function writeDraftNode(
   dependencies: ProposalEngineGraphDependencies
 ): Promise<ProposalEngineState> {
   const { jobUnderstanding, retrievedContext, proposalPlan } = ensureProposalContext(state);
+  const attempt = state.draftHistory.length + 1;
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "write_draft",
+    status: "started",
+    attempt,
+    startedAt: progressStartedAt
+  });
   const selectedFragments = [
     ...retrievedContext.fragments.openings,
     ...retrievedContext.fragments.proofs,
@@ -270,6 +359,16 @@ async function writeDraftNode(
       proposalPlan
     })
   );
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "write_draft",
+    status: "completed",
+    attempt,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
 
   return {
     ...state,
@@ -280,7 +379,7 @@ async function writeDraftNode(
       ...currentDraft.telemetry,
       step: "write_draft",
       stage: "write_draft",
-      attempt: state.draftHistory.length + 1
+      attempt
     })
   };
 }
@@ -290,6 +389,14 @@ async function critiqueNode(
   dependencies: ProposalEngineGraphDependencies
 ): Promise<ProposalEngineState> {
   const { jobUnderstanding, retrievedContext, proposalPlan } = ensureProposalContext(state);
+  const attempt = state.critiqueHistory.length + 1;
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "critique",
+    status: "started",
+    attempt,
+    startedAt: progressStartedAt
+  });
   const deterministicCopyRisk = dependencies.assessCopyRisk({
     draft: state.currentDraft,
     retrievedContext
@@ -317,6 +424,16 @@ async function critiqueNode(
     latestCritique.approvalStatus === "NEEDS_REVISION" ? state.revisionCount + 1 : state.revisionCount;
   const shouldFinalize =
     latestCritique.approvalStatus === "APPROVED" || nextRevisionCount >= state.maxRevisions;
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "critique",
+    status: "completed",
+    attempt,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
 
   return {
     ...state,
@@ -330,7 +447,7 @@ async function critiqueNode(
       ...critique.telemetry,
       step: "critique",
       stage: "critique",
-      attempt: state.critiqueHistory.length + 1
+      attempt
     })
   };
 }
@@ -343,6 +460,15 @@ async function reviseIfNeededNode(
   if (!state.latestCritique) {
     throw new Error("revise_if_needed requires latestCritique.");
   }
+
+  const attempt = state.revisionCount;
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "revise_if_needed",
+    status: "started",
+    attempt,
+    startedAt: progressStartedAt
+  });
 
   const selectedFragments = [
     ...retrievedContext.fragments.openings,
@@ -364,6 +490,16 @@ async function reviseIfNeededNode(
       }))
     })
   );
+  const progressFinishedAt = Date.now();
+
+  await notifyProgress(dependencies, {
+    step: "revise_if_needed",
+    status: "completed",
+    attempt,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
 
   return {
     ...state,
@@ -374,7 +510,7 @@ async function reviseIfNeededNode(
       ...revisedDraft.telemetry,
       step: "revise_if_needed",
       stage: "revise_if_needed",
-      attempt: state.revisionCount
+      attempt
     })
   };
 }

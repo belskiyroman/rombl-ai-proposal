@@ -1,6 +1,7 @@
 import { assessCopyRisk, type CopyRiskReference } from "./copy-risk";
 import type { GenerateEmbeddingResult } from "../ai/embeddings";
 import { summarizeTelemetry, type GenerationStepTelemetry, type GenerationTelemetrySummary } from "../ai/telemetry";
+import type { ProposalEngineProgressEvent } from "./progress";
 import { rerankHistoricalCases, selectEvidenceSignals, selectFragmentSignals, type RetrievedEvidence, type RetrievedFragment, type RetrievedHistoricalCase, type VectorScoreMatch } from "./retrieval";
 import type { GenerationJobInput, JobUnderstanding } from "./schemas";
 import { createProposalEngineInitialState, defaultMaxProposalRevisions, type CandidateProfileSummary, type ProposalEngineState } from "./state";
@@ -41,6 +42,7 @@ export interface CreateProposalDependencies {
     dependencies: ProposalEngineGraphDependencies
   ) => Promise<ProposalEngineState>;
   graphDependencies: Pick<ProposalEngineGraphDependencies, "runners">;
+  onProgress?: (event: ProposalEngineProgressEvent) => Promise<void> | void;
 }
 
 export interface CreateProposalResult {
@@ -329,11 +331,25 @@ export async function runCreateProposal(
   dependencies: CreateProposalDependencies
 ): Promise<CreateProposalResult> {
   const loadCandidateProfileStartedAt = Date.now();
+  await dependencies.onProgress?.({
+    step: "load_candidate_profile",
+    status: "started",
+    attempt: 1,
+    startedAt: loadCandidateProfileStartedAt
+  });
   const candidateProfile = await dependencies.loadCandidateProfile(args.candidateId);
   const loadCandidateProfileFinishedAt = Date.now();
   if (!candidateProfile) {
     throw new Error(`Candidate profile ${args.candidateId} not found.`);
   }
+  await dependencies.onProgress?.({
+    step: "load_candidate_profile",
+    status: "completed",
+    attempt: 1,
+    startedAt: loadCandidateProfileStartedAt,
+    finishedAt: loadCandidateProfileFinishedAt,
+    durationMs: loadCandidateProfileFinishedAt - loadCandidateProfileStartedAt
+  });
 
   const initialTelemetry: GenerationStepTelemetry[] = [
     {
@@ -357,6 +373,7 @@ export async function runCreateProposal(
   const graphDependencies: ProposalEngineGraphDependencies = {
     ...dependencies.graphDependencies,
     retrieveContext: dependencies.retrieveContext,
+    onProgress: dependencies.onProgress,
     assessCopyRisk: ({ draft, retrievedContext }) => {
       const references: CopyRiskReference[] = [
         ...retrievedContext.similarCases.map((candidate) => ({

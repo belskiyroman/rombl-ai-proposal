@@ -1,9 +1,10 @@
-import { actionGeneric, anyApi, internalMutationGeneric } from "convex/server";
+import { actionGeneric, anyApi, internalMutationGeneric, mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
 
 import { generateEmbeddingWithTelemetry } from "../src/lib/ai/embeddings";
 import type { GenerationTelemetrySummary, GenerationStepTelemetry } from "../src/lib/ai/telemetry";
 import { createProposalEngineRunners } from "../src/lib/proposal-engine/agents";
+import { getProposalEngineStepLabel, type ProposalEngineProgressEvent } from "../src/lib/proposal-engine/progress";
 import { generationJobInputSchema, type GenerationJobInput } from "../src/lib/proposal-engine/schemas";
 import { runCreateProposal, runRetrieveProposalContext, type CreateProposalResult } from "../src/lib/proposal-engine/service";
 import { internal } from "./_generated/api";
@@ -210,6 +211,128 @@ function buildCandidateSnapshot(result: CreateProposalResult) {
   };
 }
 
+function buildRetrievedContextSnapshot(result: CreateProposalResult) {
+  return {
+    similarCases: result.retrievedContext.similarCases.map((item) => ({
+      _id: item._id,
+      clusterId: item.clusterId ?? null,
+      candidateId: item.candidateId,
+      canonical: item.canonical,
+      jobTitle: item.jobTitle,
+      jobExtract: {
+        projectType: item.jobExtract.projectType,
+        domain: item.jobExtract.domain,
+        requiredSkills: item.jobExtract.requiredSkills,
+        optionalSkills: item.jobExtract.optionalSkills,
+        stack: item.jobExtract.stack,
+        clientNeeds: item.jobExtract.clientNeeds,
+        summary: item.jobExtract.summary
+      },
+      proposalExtract: {
+        hook: item.proposalExtract.hook,
+        valueProposition: item.proposalExtract.valueProposition,
+        proofPoints: item.proposalExtract.proofPoints,
+        tone: item.proposalExtract.tone
+      },
+      quality: item.quality,
+      outcome: item.outcome,
+      finalScore: (item as { finalScore?: number }).finalScore,
+      semanticScore: (item as { semanticScore?: number }).semanticScore
+    })),
+    fragments: {
+      openings: result.retrievedContext.fragments.openings.map((item) => ({
+        _id: item._id,
+        clusterId: item.clusterId ?? null,
+        candidateId: item.candidateId,
+        fragmentType: item.fragmentType,
+        text: item.text,
+        tags: item.tags,
+        specificityScore: item.specificityScore,
+        genericnessScore: item.genericnessScore,
+        qualityScore: item.qualityScore,
+        retrievalEligible: item.retrievalEligible
+      })),
+      proofs: result.retrievedContext.fragments.proofs.map((item) => ({
+        _id: item._id,
+        clusterId: item.clusterId ?? null,
+        candidateId: item.candidateId,
+        fragmentType: item.fragmentType,
+        text: item.text,
+        tags: item.tags,
+        specificityScore: item.specificityScore,
+        genericnessScore: item.genericnessScore,
+        qualityScore: item.qualityScore,
+        retrievalEligible: item.retrievalEligible
+      })),
+      closings: result.retrievedContext.fragments.closings.map((item) => ({
+        _id: item._id,
+        clusterId: item.clusterId ?? null,
+        candidateId: item.candidateId,
+        fragmentType: item.fragmentType,
+        text: item.text,
+        tags: item.tags,
+        specificityScore: item.specificityScore,
+        genericnessScore: item.genericnessScore,
+        qualityScore: item.qualityScore,
+        retrievalEligible: item.retrievalEligible
+      }))
+    },
+    evidenceCandidates: result.retrievedContext.evidenceCandidates.map((item) => ({
+      _id: item._id,
+      candidateId: item.candidateId,
+      type: item.type,
+      text: item.text,
+      tags: item.tags,
+      techStack: item.techStack,
+      domains: item.domains,
+      confidence: item.confidence,
+      active: item.active,
+      source: item.source
+    }))
+  };
+}
+
+type StoredGenerationProgressStep = {
+  step: string;
+  label: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  attempt: number;
+  startedAt: number;
+  finishedAt?: number;
+  durationMs?: number;
+};
+
+function buildProgressStepRecord(event: ProposalEngineProgressEvent): StoredGenerationProgressStep {
+  return {
+    step: event.step,
+    label: getProposalEngineStepLabel(event.step),
+    status: event.status === "completed" ? "COMPLETED" : "RUNNING",
+    attempt: event.attempt,
+    startedAt: event.startedAt,
+    finishedAt: event.finishedAt,
+    durationMs: event.durationMs
+  } as const;
+}
+
+function upsertProgressSteps(
+  existingSteps: StoredGenerationProgressStep[],
+  nextStep: StoredGenerationProgressStep
+) {
+  const steps = [...existingSteps];
+  const existingIndex = steps.findIndex((step) => step.step === nextStep.step && step.attempt === nextStep.attempt);
+
+  if (existingIndex === -1) {
+    steps.push(nextStep);
+  } else {
+    steps[existingIndex] = {
+      ...steps[existingIndex],
+      ...nextStep
+    };
+  }
+
+  return steps.sort((left, right) => left.startedAt - right.startedAt || left.attempt - right.attempt);
+}
+
 function normalizeStepTelemetry(steps: GenerationStepTelemetry[]): GenerationStepTelemetry[] {
   return steps.map((step) => ({
     ...step,
@@ -256,7 +379,7 @@ export function buildGenerationRunDocument(args: {
     retrievedFragmentIds: retrievedFragmentIds as never,
     retrievedEvidenceIds: args.result.retrievedContext.evidenceCandidates.map((item) => item._id as never),
     executionTrace: args.result.executionTrace,
-    retrievedContextSnapshot: args.result.retrievedContext,
+    retrievedContextSnapshot: buildRetrievedContextSnapshot(args.result),
     candidateSnapshot: buildCandidateSnapshot(args.result),
     selectedEvidence: args.result.selectedEvidence,
     proposalPlan: args.result.proposalPlan,
@@ -271,6 +394,158 @@ export function buildGenerationRunDocument(args: {
     updatedAt: args.createdAt
   };
 }
+
+export const createGenerationProgress = mutationGeneric({
+  args: {
+    candidateId: v.float64(),
+    jobInput: generationJobInputValidator
+  },
+  handler: async (ctx, args) => {
+    const createdAt = Date.now();
+
+    return ctx.db.insert("generation_progress", {
+      candidateId: args.candidateId,
+      jobInput: args.jobInput,
+      status: "QUEUED",
+      steps: [],
+      startedAt: createdAt,
+      updatedAt: createdAt
+    });
+  }
+});
+
+export const getGenerationProgress = queryGeneric({
+  args: {
+    id: v.id("generation_progress")
+  },
+  handler: async (ctx, args) => {
+    const progress = await ctx.db.get(args.id);
+    if (!progress) {
+      return null;
+    }
+
+    return {
+      _id: String(progress._id),
+      candidateId: progress.candidateId,
+      jobInput: progress.jobInput,
+      status: progress.status,
+      currentStep: progress.currentStep ?? null,
+      steps: progress.steps,
+      startedAt: progress.startedAt,
+      updatedAt: progress.updatedAt,
+      completedAt: progress.completedAt,
+      totalDurationMs: progress.totalDurationMs,
+      errorMessage: progress.errorMessage,
+      generationRunId: progress.generationRunId ? String(progress.generationRunId) : null
+    };
+  }
+});
+
+export const recordGenerationProgressEvent = internalMutationGeneric({
+  args: {
+    progressId: v.id("generation_progress"),
+    event: v.object({
+      step: v.string(),
+      status: v.union(v.literal("started"), v.literal("completed")),
+      attempt: v.float64(),
+      startedAt: v.float64(),
+      finishedAt: v.optional(v.float64()),
+      durationMs: v.optional(v.float64())
+    })
+  },
+  handler: async (ctx, args) => {
+    const progress = await ctx.db.get(args.progressId);
+    if (!progress) {
+      return null;
+    }
+
+    const nextStep = buildProgressStepRecord(args.event);
+    const now = Date.now();
+
+    await ctx.db.patch(args.progressId, {
+      status: "RUNNING",
+      currentStep:
+        args.event.status === "started"
+          ? {
+              step: nextStep.step,
+              label: nextStep.label,
+              attempt: nextStep.attempt,
+              startedAt: nextStep.startedAt
+            }
+          : undefined,
+      steps: upsertProgressSteps(progress.steps, nextStep),
+      updatedAt: now
+    });
+
+    return true;
+  }
+});
+
+export const completeGenerationProgress = internalMutationGeneric({
+  args: {
+    progressId: v.id("generation_progress"),
+    generationRunId: v.id("generation_runs"),
+    completedAt: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const progress = await ctx.db.get(args.progressId);
+    if (!progress) {
+      return null;
+    }
+
+    await ctx.db.patch(args.progressId, {
+      status: "COMPLETED",
+      currentStep: undefined,
+      completedAt: args.completedAt,
+      totalDurationMs: args.completedAt - progress.startedAt,
+      updatedAt: args.completedAt,
+      generationRunId: args.generationRunId,
+      errorMessage: undefined
+    });
+
+    return true;
+  }
+});
+
+export const failGenerationProgress = internalMutationGeneric({
+  args: {
+    progressId: v.id("generation_progress"),
+    errorMessage: v.string(),
+    completedAt: v.float64()
+  },
+  handler: async (ctx, args) => {
+    const progress = await ctx.db.get(args.progressId);
+    if (!progress) {
+      return null;
+    }
+
+    const lastCurrentStep = progress.currentStep;
+    const nextSteps =
+      lastCurrentStep === null || lastCurrentStep === undefined
+        ? progress.steps
+        : upsertProgressSteps(progress.steps, {
+            step: lastCurrentStep.step,
+            label: lastCurrentStep.label,
+            status: "FAILED",
+            attempt: lastCurrentStep.attempt,
+            startedAt: lastCurrentStep.startedAt,
+            finishedAt: args.completedAt,
+            durationMs: args.completedAt - lastCurrentStep.startedAt
+          });
+
+    await ctx.db.patch(args.progressId, {
+      status: "FAILED",
+      currentStep: undefined,
+      steps: nextSteps,
+      completedAt: args.completedAt,
+      totalDurationMs: args.completedAt - progress.startedAt,
+      updatedAt: args.completedAt,
+      errorMessage: args.errorMessage
+    });
+
+    return true;
+  }
+});
 
 export const insertGenerationRunRecord = internalMutationGeneric({
   args: {
@@ -306,6 +581,7 @@ export const createProposal = actionGeneric({
   args: {
     candidateId: v.float64(),
     jobInput: generationJobInputValidator,
+    progressId: v.optional(v.id("generation_progress")),
     maxRevisions: v.optional(v.number()),
     embeddingModel: v.optional(v.string()),
     fastModel: v.optional(v.string()),
@@ -318,140 +594,182 @@ export const createProposal = actionGeneric({
       reasoningModel: args.reasoningModel
     });
 
-    const result = await runCreateProposal(
-      {
+    const onProgress =
+      args.progressId === undefined
+        ? undefined
+        : async (event: ProposalEngineProgressEvent) => {
+            await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<true | null>)(
+              internal.generate.recordGenerationProgressEvent,
+              {
+                progressId: args.progressId,
+                event
+              }
+            );
+          };
+
+    try {
+      const result = await runCreateProposal(
+        {
+          candidateId: args.candidateId,
+          jobInput: parsedJobInput,
+          maxRevisions: args.maxRevisions
+        },
+        {
+          loadCandidateProfile: (candidateId) =>
+            (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
+              candidateId: number;
+              displayName: string;
+              positioningSummary: string;
+              toneProfile: string;
+              coreDomains: string[];
+              preferredCtaStyle: string;
+            } | null>)(anyApi.profiles.getCandidateProfileSummary, {
+              candidateId
+            }),
+          retrieveContext: ({ candidateId, jobUnderstanding }) =>
+            runRetrieveProposalContext(
+              {
+                candidateId,
+                jobUnderstanding
+              },
+              {
+                embed: (input) =>
+                  generateEmbeddingWithTelemetry(input, {
+                    model: args.embeddingModel
+                  }),
+                searchHistoricalCaseSummaries: async (embedding, limit) => {
+                  const matches = await ctx.vectorSearch("historical_cases", "by_job_summary_embedding", {
+                    vector: embedding,
+                    limit
+                  });
+
+                  return matches.map((match) => ({
+                    id: String(match._id),
+                    score: match._score
+                  }));
+                },
+                searchHistoricalCaseNeeds: async (embedding, limit) => {
+                  const matches = await ctx.vectorSearch("historical_cases", "by_needs_embedding", {
+                    vector: embedding,
+                    limit
+                  });
+
+                  return matches.map((match) => ({
+                    id: String(match._id),
+                    score: match._score
+                  }));
+                },
+                searchProposalFragments: async (_fragmentType, embedding, limit) => {
+                  const matches = await ctx.vectorSearch("proposal_fragments", "by_embedding", {
+                    vector: embedding,
+                    limit
+                  });
+
+                  return matches.map((match) => ({
+                    id: String(match._id),
+                    score: match._score
+                  }));
+                },
+                searchCandidateEvidence: async (embedding, limit) => {
+                  const matches = await ctx.vectorSearch("candidate_evidence_blocks", "by_embedding", {
+                    vector: embedding,
+                    limit
+                  });
+
+                  return matches.map((match) => ({
+                    id: String(match._id),
+                    score: match._score
+                  }));
+                },
+                getHistoricalCasesByIds: (ids) =>
+                  (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
+                    anyApi.library.getHistoricalCasesByIds,
+                    {
+                      ids: ids as never
+                    }
+                  ),
+                getProposalFragmentsByIds: (ids) =>
+                  (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
+                    anyApi.library.getProposalFragmentsByIds,
+                    {
+                      ids: ids as never
+                    }
+                  ),
+                getCandidateEvidenceByIds: (ids) =>
+                  (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
+                    anyApi.library.getCandidateEvidenceByIds,
+                    {
+                      ids: ids as never
+                    }
+                  )
+              }
+            ),
+          graphDependencies: {
+            runners
+          },
+          onProgress
+        }
+      );
+
+      const createdAt = Date.now();
+      const generationDocument = buildGenerationRunDocument({
         candidateId: args.candidateId,
         jobInput: parsedJobInput,
-        maxRevisions: args.maxRevisions
-      },
-      {
-        loadCandidateProfile: (candidateId) =>
-          (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<{
-            candidateId: number;
-            displayName: string;
-            positioningSummary: string;
-            toneProfile: string;
-            coreDomains: string[];
-            preferredCtaStyle: string;
-          } | null>)(anyApi.profiles.getCandidateProfileSummary, {
-            candidateId
-          }),
-        retrieveContext: ({ candidateId, jobUnderstanding }) =>
-          runRetrieveProposalContext(
-            {
-              candidateId,
-              jobUnderstanding
-            },
-            {
-              embed: (input) =>
-                generateEmbeddingWithTelemetry(input, {
-                  model: args.embeddingModel
-                }),
-              searchHistoricalCaseSummaries: async (embedding, limit) => {
-                const matches = await ctx.vectorSearch("historical_cases", "by_job_summary_embedding", {
-                  vector: embedding,
-                  limit
-                });
+        result,
+        createdAt
+      });
 
-                return matches.map((match) => ({
-                  id: String(match._id),
-                  score: match._score
-                }));
-              },
-              searchHistoricalCaseNeeds: async (embedding, limit) => {
-                const matches = await ctx.vectorSearch("historical_cases", "by_needs_embedding", {
-                  vector: embedding,
-                  limit
-                });
-
-                return matches.map((match) => ({
-                  id: String(match._id),
-                  score: match._score
-                }));
-              },
-              searchProposalFragments: async (_fragmentType, embedding, limit) => {
-                const matches = await ctx.vectorSearch("proposal_fragments", "by_embedding", {
-                  vector: embedding,
-                  limit
-                });
-
-                return matches.map((match) => ({
-                  id: String(match._id),
-                  score: match._score
-                }));
-              },
-              searchCandidateEvidence: async (embedding, limit) => {
-                const matches = await ctx.vectorSearch("candidate_evidence_blocks", "by_embedding", {
-                  vector: embedding,
-                  limit
-                });
-
-                return matches.map((match) => ({
-                  id: String(match._id),
-                  score: match._score
-                }));
-              },
-              getHistoricalCasesByIds: (ids) =>
-                (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
-                  anyApi.library.getHistoricalCasesByIds,
-                  {
-                    ids: ids as never
-                  }
-                ),
-              getProposalFragmentsByIds: (ids) =>
-                (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
-                  anyApi.library.getProposalFragmentsByIds,
-                  {
-                    ids: ids as never
-                  }
-                ),
-              getCandidateEvidenceByIds: (ids) =>
-                (ctx.runQuery as (queryRef: unknown, queryArgs: unknown) => Promise<any[]>)(
-                  anyApi.library.getCandidateEvidenceByIds,
-                  {
-                    ids: ids as never
-                  }
-                )
-            }
-          ),
-        graphDependencies: {
-          runners
+      const generationRunId = await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<string>)(
+        internal.generate.insertGenerationRunRecord,
+        {
+          document: generationDocument
         }
+      );
+
+      if (args.progressId !== undefined) {
+        await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<true | null>)(
+          internal.generate.completeGenerationProgress,
+          {
+            progressId: args.progressId,
+            generationRunId: generationRunId as never,
+            completedAt: Date.now()
+          }
+        );
       }
-    );
 
-    const createdAt = Date.now();
-    const generationDocument = buildGenerationRunDocument({
-      candidateId: args.candidateId,
-      jobInput: parsedJobInput,
-      result,
-      createdAt
-    });
-
-    const generationRunId = await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<string>)(
-      internal.generate.insertGenerationRunRecord,
-      {
-        document: generationDocument
+      return {
+        generationRunId: String(generationRunId),
+        progressId: args.progressId ? String(args.progressId) : undefined,
+        candidateSnapshot: generationDocument.candidateSnapshot,
+        jobInput: generationDocument.jobInput,
+        finalProposal: result.finalProposal,
+        approvalStatus: result.approvalStatus,
+        critiqueHistory: result.critiqueHistory,
+        executionTrace: result.executionTrace,
+        stepTelemetry: result.stepTelemetry,
+        telemetrySummary: result.telemetrySummary,
+        selectedEvidence: result.selectedEvidence,
+        retrievedContext: result.retrievedContext,
+        jobUnderstanding: result.jobUnderstanding,
+        proposalPlan: result.proposalPlan,
+        draftHistory: result.draftHistory,
+        copyRisk: generationDocument.copyRisk,
+        createdAt
+      };
+    } catch (error) {
+      if (args.progressId !== undefined) {
+        const message = error instanceof Error ? error.message : "Unknown generation error";
+        await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<true | null>)(
+          internal.generate.failGenerationProgress,
+          {
+            progressId: args.progressId,
+            errorMessage: message,
+            completedAt: Date.now()
+          }
+        );
       }
-    );
 
-    return {
-      generationRunId: String(generationRunId),
-      candidateSnapshot: generationDocument.candidateSnapshot,
-      jobInput: generationDocument.jobInput,
-      finalProposal: result.finalProposal,
-      approvalStatus: result.approvalStatus,
-      critiqueHistory: result.critiqueHistory,
-      executionTrace: result.executionTrace,
-      stepTelemetry: result.stepTelemetry,
-      telemetrySummary: result.telemetrySummary,
-      selectedEvidence: result.selectedEvidence,
-      retrievedContext: result.retrievedContext,
-      jobUnderstanding: result.jobUnderstanding,
-      proposalPlan: result.proposalPlan,
-      draftHistory: result.draftHistory,
-      copyRisk: generationDocument.copyRisk,
-      createdAt
-    };
+      throw error;
+    }
   }
 });

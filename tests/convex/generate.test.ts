@@ -59,16 +59,27 @@ describe("buildGenerationRunDocument", () => {
                 domain: "SaaS",
                 requiredSkills: ["Next.js"],
                 optionalSkills: ["AWS"],
+                senioritySignals: ["senior"],
+                deliverables: ["ship MVP"],
+                constraints: ["tight timeline"],
                 stack: ["Next.js", "Node.js"],
+                softSignals: ["ownership"],
+                jobLengthBucket: "medium",
                 clientNeeds: ["ownership"],
                 summary: "Build an MVP with strong ownership."
-              },
+              } as any,
               proposalExtract: {
                 hook: "I can own this MVP end-to-end.",
                 valueProposition: "Strong ownership and shipping speed.",
+                experienceClaims: ["Built SaaS MVPs"],
+                techMapping: ["Next.js -> MVP frontend"],
                 proofPoints: ["Built SaaS MVPs"],
-                tone: "consultative"
-              },
+                cta: "Happy to discuss next steps.",
+                tone: "consultative",
+                lengthBucket: "medium",
+                specificityScore: 0.81,
+                genericnessScore: 0.19
+              } as any,
               quality: {
                 rubric: {
                   relevance: 0.9,
@@ -211,6 +222,10 @@ describe("buildGenerationRunDocument", () => {
     expect(document.candidateSnapshot.displayName).toBe("Roman");
     expect(document.executionTrace).toEqual(["job_understanding", "retrieve_context", "write_draft", "critique"]);
     expect(document.retrievedContextSnapshot.similarCases).toHaveLength(1);
+    expect(document.retrievedContextSnapshot.similarCases[0]?.jobExtract).not.toHaveProperty("constraints");
+    expect(document.retrievedContextSnapshot.similarCases[0]?.jobExtract.summary).toBe(
+      "Build an MVP with strong ownership."
+    );
     expect(document.stepTelemetry[0]?.tokenUsage?.totalTokens).toBe(160);
     expect(document.retrievedCaseIds).toHaveLength(1);
     expect(document.retrievedFragmentIds).toEqual(["fragment_1"]);
