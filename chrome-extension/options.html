@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rombl Extension Settings</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="ext-body ext-body-wide">
+    <main class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Extension Settings</p>
+        <h1>Generator app URL</h1>
+        <p class="helper-text">
+          Enter the base URL of this app, for example <code>http://localhost:3000</code> or your deployed domain.
+        </p>
+      </div>
+
+      <form id="settingsForm" class="form-stack">
+        <label class="field-label" for="appBaseUrl">App base URL</label>
+        <input id="appBaseUrl" class="text-input" type="url" placeholder="http://localhost:3000" required />
+        <p id="settingsStatus" class="helper-text"></p>
+        <button class="primary-button" type="submit">Save app URL</button>
+      </form>
+    </main>
+
+    <script src="./options.js"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # rombl-ai-proposal
 
-RAG-based proposal generation MVP built with TypeScript, Next.js (App Router), Convex, LangGraph.js, OpenAI, and Zod.
+Grounded proposal generation workspace built with TypeScript, Next.js (App Router), Convex, LangGraph.js, OpenAI, and Zod.
 
 ## Basic Setup
 
@@ -41,11 +41,39 @@ npm run dev
 - App: <http://localhost:3000>
 - Health check: <http://localhost:3000/api/health>
 
+## Chrome Extension
+
+The repo also contains a Chrome MV3 extension in `chrome-extension/`.
+
+Useful commands:
+
+```bash
+npm run extension:build
+npm run extension:watch
+```
+
+Local flow:
+
+1. Build the extension.
+2. Load `chrome-extension/dist` as an unpacked extension in Chrome.
+3. Open the extension options page and set the app base URL, for example `http://localhost:3000`.
+4. Visit an Upwork job page and click the extension action to open the side panel.
+5. Review the parsed job, choose a candidate, and run generation directly in the side panel.
+
+Primary extension flow:
+
+- `GET /api/extension/candidates`
+- `POST /api/extension/generate`
+- `GET /api/extension/generate/status?id=...`
+
+Fallback/manual tooling still exists through `POST /api/extension/handoffs` and `/generate?handoff=...`.
+
 ## Useful Commands
 
 ```bash
 npm test
 npm run build
+npm run extension:build
 npm start
 ```
 

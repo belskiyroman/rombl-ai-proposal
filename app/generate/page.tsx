@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import type { GenerationSnapshotData } from "@/src/lib/generation-snapshot";
 import { GenerationForm } from "@/src/components/GenerationForm";
@@ -27,7 +27,15 @@ export default function GeneratePage() {
           </Button>
         </div>
 
-        <GenerationForm onGenerated={setGeneratedResult} />
+        <Suspense
+          fallback={
+            <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+              Loading generator form...
+            </div>
+          }
+        >
+          <GenerationForm onGenerated={setGeneratedResult} />
+        </Suspense>
         <GeneratedResult result={generatedResult} />
       </div>
     </main>

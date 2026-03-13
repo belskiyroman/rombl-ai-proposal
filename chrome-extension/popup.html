@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rombl Handoff</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="ext-body">
+    <main class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">Upwork Handoff</p>
+        <h1>Send job to generator</h1>
+      </div>
+
+      <section class="status-card">
+        <p id="statusText" class="status-text">Loading current tab…</p>
+      </section>
+
+      <section id="previewCard" class="preview-card is-hidden">
+        <p id="previewMeta" class="preview-meta"></p>
+        <h2 id="previewTitle" class="preview-title"></h2>
+        <p id="previewDescription" class="preview-description"></p>
+      </section>
+
+      <div class="actions">
+        <button id="openGeneratorButton" class="primary-button" disabled>Open in Generator</button>
+        <button id="refreshButton" class="secondary-button" type="button">Refresh capture</button>
+      </div>
+
+      <div class="footer-actions">
+        <button id="openOptionsButton" class="link-button" type="button">Configure app URL</button>
+      </div>
+    </main>
+
+    <script src="./popup.js"></script>
+  </body>
+</html>

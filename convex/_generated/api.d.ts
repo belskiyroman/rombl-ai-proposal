@@ -11,6 +11,7 @@
 import type * as cases from "../cases.js";
 import type * as embeddings from "../embeddings.js";
 import type * as generate from "../generate.js";
+import type * as handoffs from "../handoffs.js";
 import type * as library from "../library.js";
 import type * as profiles from "../profiles.js";
 import type * as runs from "../runs.js";
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   cases: typeof cases;
   embeddings: typeof embeddings;
   generate: typeof generate;
+  handoffs: typeof handoffs;
   library: typeof library;
   profiles: typeof profiles;
   runs: typeof runs;

@@ -25,3 +25,4 @@ coverage/
 convex/_generated
 # LangGraph API
 .langgraph_api
+chrome-extension/dist

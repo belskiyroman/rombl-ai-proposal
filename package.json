@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "extension:build": "node scripts/build-extension.mjs",
+    "extension:watch": "node scripts/build-extension.mjs --watch",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -29,11 +31,13 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/chrome": "^0.1.24",
     "@types/jsdom": "^28.0.0",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.20",
+    "esbuild": "^0.25.1",
     "jsdom": "^28.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",

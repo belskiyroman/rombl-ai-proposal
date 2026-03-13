@@ -61,6 +61,51 @@ const SAMPLE_HTML_HOURLY = `
 </html>
 `;
 
+const SAMPLE_PROPOSAL_PAGE_HTML = `
+<html>
+<head><title>Submit a Proposal - Upwork</title></head>
+<body>
+    <h1>Submit a Proposal</h1>
+    <div class="fe-proposal-settings">
+        <div class="air3-token">Remaining balance: 40 Connects</div>
+    </div>
+    <div class="fe-job-details">
+        <section class="air3-card-section">
+            <div class="content">
+                <h2>Job details</h2>
+                <h3 class="h5">Full-Stack Developer for Innovative Medical Application</h3>
+                <ul class="list-inline">
+                    <li><div class="air3-token text-body-sm mb-0">Full Stack Development</div></li>
+                </ul>
+                <div class="description text-body-sm">
+                    <span class="air3-truncation">
+                        <span tabindex="-1">
+                            <span id="air3-truncation-1">
+                                We are seeking 2 talented Full-Stack Developers to join our team and help build and maintain a cutting-edge medical application designed for healthcare professionals.
+                            </span>
+                        </span>
+                        <span class="air3-truncation-labels">
+                            <button aria-expanded="true" aria-controls="air3-truncation-1" type="button" class="air3-truncation-btn">
+                                <span>less</span>
+                            </button>
+                        </span>
+                    </span>
+                </div>
+                <a data-test="open-original-posting" href="/jobs/~022032420924356894371">
+                    View job posting
+                </a>
+            </div>
+            <div class="sidebar">
+                <small>Hourly range</small>
+                <strong>$50.00 - $70.00</strong>
+                <small>Hourly</small>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
+`;
+
 const EMPTY_HTML = `<html><head></head><body></body></html>`;
 
 describe("parseUpworkJobHtml", () => {
@@ -241,6 +286,26 @@ describe("parseUpworkJobHtml", () => {
     it("returns empty string for empty HTML", () => {
       const result = parseUpworkJobHtml(EMPTY_HTML);
       expect(result.jobLink).toBe("");
+    });
+  });
+
+  describe("proposal page extraction", () => {
+    it("prefers the job-details title over the page heading", () => {
+      const result = parseUpworkJobHtml(SAMPLE_PROPOSAL_PAGE_HTML);
+      expect(result.title).toBe("Full-Stack Developer for Innovative Medical Application");
+    });
+
+    it("extracts the proposal-page description without truncation labels", () => {
+      const result = parseUpworkJobHtml(SAMPLE_PROPOSAL_PAGE_HTML);
+      expect(result.text).toContain("cutting-edge medical application");
+      expect(result.text).not.toContain("less");
+    });
+
+    it("scopes proposal-page skills and source links to job details only", () => {
+      const result = parseUpworkJobHtml(SAMPLE_PROPOSAL_PAGE_HTML);
+      expect(result.skills).toEqual(["Full Stack Development"]);
+      expect(result.jobLink).toBe("/jobs/~022032420924356894371");
+      expect(result.type).toBe("hourly");
     });
   });
 

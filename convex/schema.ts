@@ -242,6 +242,7 @@ const telemetrySummaryValidator = v.object({
   totalTokens: v.float64(),
   totalReasoningTokens: v.float64()
 });
+const generationHandoffSourceSiteValidator = v.literal("upwork");
 
 export default defineSchema({
   candidate_profiles: defineTable({
@@ -360,6 +361,19 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["candidateId", "fragmentType", "retrievalEligible"]
     }),
+
+  generation_handoffs: defineTable({
+    sourceSite: generationHandoffSourceSiteValidator,
+    sourceUrl: v.string(),
+    pageTitle: v.string(),
+    jobTitle: v.string(),
+    jobDescription: v.string(),
+    capturedAt: v.float64(),
+    createdAt: v.float64(),
+    expiresAt: v.float64()
+  })
+    .index("by_created_at", ["createdAt"])
+    .index("by_expires_at", ["expiresAt"]),
 
   generation_progress: defineTable({
     candidateId: v.float64(),

@@ -73,6 +73,11 @@ The goal is not to copy past proposals. The goal is to reuse high-signal pattern
     - step telemetry and telemetry summary
     - final proposal
 
+- `generation_handoffs`
+  - temporary import records used by the Chrome extension handoff flow
+  - stores source metadata plus extracted `jobTitle` and `jobDescription`
+  - used only for fallback/manual prefill into `/generate?handoff=...`
+
 There are no legacy V1 tables in the current schema.
 
 ## 4. Candidate Management
@@ -115,6 +120,15 @@ Library and saved-run read models are split out of write actions.
 
 - `runs.listGenerationRuns`
 - `runs.getGenerationRun`
+
+### Handoff queries
+
+- `handoffs.getGenerationHandoff`
+
+### Extension generation queries
+
+- `generate.getGenerationProgressById`
+- `runs.getGenerationRunById`
 
 ## 6. Historical Case Library
 
@@ -163,6 +177,27 @@ Online proposal generation is handled through `convex/generate.ts`.
 ### Public API
 
 - `generate.createProposal`
+- `generate.startProposalGeneration`
+
+### Extension handoff
+
+- `POST /api/extension/handoffs`
+  - validates extension payload
+  - creates a temporary `generation_handoff`
+  - returns a short handoff id plus `/generate?handoff=...`
+
+### Extension-native generation
+
+- `GET /api/extension/candidates`
+- `POST /api/extension/generate`
+- `GET /api/extension/generate/status?id=...`
+
+The extension-native path is asynchronous:
+
+1. start a `generation_progress`
+2. schedule background proposal generation in Convex
+3. poll progress from the side panel
+4. render the final proposal in the extension without leaving the job page
 
 ### Behavior
 
@@ -364,6 +399,8 @@ Used for:
 - `/generate`
   - proposal generation console
   - shows retrieved signals, selected evidence, proposal plan, evaluator trace, telemetry, and final proposal
+  - accepts `?handoff=...` and prefills the form from a temporary extension import
+  - acts as fallback/manual tooling, not the primary extension UX
 
 - `/generate/history`
   - saved run history
@@ -373,7 +410,18 @@ Used for:
 
 There is no legacy pair detail route anymore.
 
-## 14. Contributor Rules
+## 14. Chrome Extension
+
+- `chrome-extension/`
+  - Chrome MV3 Upwork-only importer and side-panel generator
+  - side panel is the primary extension UX
+  - popup/open-in-app flow is fallback only
+  - options page stores the configurable app URL
+  - background worker enables side-panel-on-action-click and clears tab-scoped state
+  - side panel captures the current job page, lets the user review/edit input, select a candidate, poll generation, and copy the final proposal
+  - content script reuses the shared Upwork parser instead of duplicating selectors
+
+## 15. Contributor Rules
 
 When working in this repo:
 
@@ -386,7 +434,7 @@ When working in this repo:
 7. Keep saved generation runs immutable.
 8. Do not introduce new product logic that depends on `historical_cases.source`; it exists only for compatibility with older local data.
 
-## 15. Deferred Feature
+## 16. Deferred Feature
 
 Multi-draft generation plus final ranking is intentionally deferred.
 

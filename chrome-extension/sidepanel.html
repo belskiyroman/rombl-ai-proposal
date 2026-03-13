@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rombl Proposal Panel</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="ext-body ext-body-sidepanel">
+    <main class="panel panel-sidepanel">
+      <div class="panel-header">
+        <p class="eyebrow">Proposal Side Panel</p>
+        <h1>Generate without leaving Upwork</h1>
+        <p id="panelStatus" class="helper-text">Loading extension state…</p>
+      </div>
+
+      <section class="status-card">
+        <div class="status-row">
+          <span class="field-label">Source</span>
+          <a id="sourceLink" class="link-button is-hidden" target="_blank" rel="noreferrer">Open job page</a>
+        </div>
+        <p id="sourceMeta" class="status-text">No captured job yet.</p>
+      </section>
+
+      <section class="form-stack">
+        <label class="field-label" for="candidateSelect">Candidate</label>
+        <select id="candidateSelect" class="text-input">
+          <option value="">Select candidate</option>
+        </select>
+
+        <label class="field-label" for="jobTitle">Job title</label>
+        <input id="jobTitle" class="text-input" type="text" placeholder="Captured job title" />
+
+        <label class="field-label" for="jobDescription">Job description</label>
+        <textarea id="jobDescription" class="text-area" rows="10" placeholder="Captured Upwork description"></textarea>
+      </section>
+
+      <div class="actions">
+        <button id="generateButton" class="primary-button" type="button">Generate Proposal</button>
+        <button id="refreshCaptureButton" class="secondary-button" type="button">Refresh current page</button>
+      </div>
+
+      <section id="progressCard" class="preview-card is-hidden">
+        <p class="preview-meta">Generation progress</p>
+        <p id="progressSummary" class="status-text"></p>
+        <ul id="progressSteps" class="progress-list"></ul>
+      </section>
+
+      <section id="resultCard" class="preview-card is-hidden">
+        <div class="status-row">
+          <p class="preview-meta">Final proposal</p>
+          <span id="resultBadge" class="result-badge"></span>
+        </div>
+        <pre id="proposalOutput" class="proposal-output"></pre>
+        <div class="actions">
+          <button id="copyProposalButton" class="primary-button" type="button">Copy proposal</button>
+          <button id="openRunButton" class="secondary-button" type="button">Open in app</button>
+        </div>
+      </section>
+
+      <div class="footer-actions">
+        <button id="openOptionsButton" class="link-button" type="button">Configure app URL</button>
+      </div>
+    </main>
+
+    <script src="./sidepanel.js"></script>
+  </body>
+</html>
