@@ -43,6 +43,11 @@ export function parseUpworkJobHtml(html: string): ParsedJobData {
 // ---------- Extractors ----------
 
 function extractTitle(doc: Document): string {
+    const proposalJobDetails = getProposalJobDetailsRoot(doc);
+    if (proposalJobDetails) {
+        return extractProposalJobTitle(proposalJobDetails);
+    }
+
     // Strategy 1: data-test attribute
     const dataTest = doc.querySelector('[data-test="job-title"]');
     if (dataTest?.textContent?.trim()) return dataTest.textContent.trim();
@@ -67,6 +72,11 @@ function extractTitle(doc: Document): string {
 }
 
 function extractDescription(doc: Document): string {
+    const proposalJobDetails = getProposalJobDetailsRoot(doc);
+    if (proposalJobDetails) {
+        return extractProposalJobDescription(proposalJobDetails);
+    }
+
     // Strategy 1: data-test="Description" or "UpCDescription"
     const dataDesc =
         doc.querySelector('[data-test="Description"]') ??
@@ -148,6 +158,17 @@ function extractSkills(doc: Document): string[] {
         }
     }
 
+    const proposalJobDetails = getProposalJobDetailsRoot(doc);
+    if (proposalJobDetails) {
+        const scopedSkills = proposalJobDetails.querySelectorAll(
+            '.content [data-test="Skill"], .content [data-test="skill"], .content .air3-token, .content [class*="skill-badge"], .content .up-skill-badge'
+        );
+        for (const skill of scopedSkills) {
+            addSkill(skill.textContent);
+        }
+        return skills;
+    }
+
     // Strategy 1: data-test="Skill" / "skill" / "SkillsList"
     const skillEls = doc.querySelectorAll(
         '[data-test="Skill"], [data-test="skill"], [data-test*="skill"]:not([data-test*="SkillsList"])'
@@ -209,14 +230,12 @@ function extractSkills(doc: Document): string[] {
 }
 
 function extractProjectType(doc: Document): "hourly" | "fixedPrice" | "hourly/fixedPrice" {
-    const bodyText = doc.body?.textContent?.toLowerCase() ?? "";
+    const proposalJobDetails = getProposalJobDetailsRoot(doc);
+    if (proposalJobDetails) {
+        return extractProjectTypeFromText(proposalJobDetails.textContent ?? "");
+    }
 
-    const hasHourly = /\bhourly\b/.test(bodyText);
-    const hasFixed = /\bfixed[- ]?price\b/.test(bodyText);
-
-    if (hasHourly && hasFixed) return "hourly/fixedPrice";
-    if (hasHourly) return "hourly";
-    return "fixedPrice";
+    return extractProjectTypeFromText(doc.body?.textContent ?? "");
 }
 
 function extractClientLocation(doc: Document): string {
@@ -332,6 +351,18 @@ function extractClientTotalSpent(doc: Document): number {
 }
 
 function extractJobLink(doc: Document): string {
+    const proposalJobDetails = getProposalJobDetailsRoot(doc);
+    if (proposalJobDetails) {
+        const originalPostingLink =
+            proposalJobDetails.querySelector('a[data-test="open-original-posting"]') ??
+            proposalJobDetails.querySelector('a[href*="/jobs/~"]');
+        if (originalPostingLink?.getAttribute("href")?.trim()) {
+            return originalPostingLink.getAttribute("href")!.trim();
+        }
+
+        return "";
+    }
+
     // Strategy 1: <link rel="canonical">
     const canonical = doc.querySelector('link[rel="canonical"]');
     if (canonical?.getAttribute("href")?.trim()) {
@@ -345,6 +376,60 @@ function extractJobLink(doc: Document): string {
     }
 
     return "";
+}
+
+function getProposalJobDetailsRoot(root: ParentNode): Element | null {
+    const directMatch = root.querySelector(".fe-job-details");
+    if (directMatch) {
+        return directMatch;
+    }
+
+    const headings = root.querySelectorAll("h2, h3, h4");
+    for (const heading of headings) {
+        const text = heading.textContent?.trim().toLowerCase() ?? "";
+        if (text === "job details") {
+            return heading.closest("section, [class*='card'], div") ?? heading.parentElement;
+        }
+    }
+
+    return null;
+}
+
+function extractProposalJobTitle(root: ParentNode): string {
+    const candidates = root.querySelectorAll(".content h3, .content h4, .content h5, h3, h4, h5");
+    for (const candidate of candidates) {
+        const text = candidate.textContent?.trim() ?? "";
+        if (text && !/^job details$/i.test(text)) {
+            return text;
+        }
+    }
+
+    return "";
+}
+
+function extractProposalJobDescription(root: ParentNode): string {
+    const description =
+        root.querySelector(".content .description") ??
+        root.querySelector(".description");
+    if (!description) {
+        return "";
+    }
+
+    const clone = description.cloneNode(true) as Element;
+    clone.querySelectorAll(".air3-truncation-labels, .air3-truncation-btn").forEach((node) => node.remove());
+
+    const text = htmlToReadableText(clone);
+    return text.length > 10 ? cleanText(text) : "";
+}
+
+function extractProjectTypeFromText(text: string): "hourly" | "fixedPrice" | "hourly/fixedPrice" {
+    const normalized = text.toLowerCase();
+    const hasHourly = /\bhourly\b/.test(normalized);
+    const hasFixed = /\bfixed[- ]?price\b/.test(normalized);
+
+    if (hasHourly && hasFixed) return "hourly/fixedPrice";
+    if (hasHourly) return "hourly";
+    return "fixedPrice";
 }
 
 // ---------- Helpers ----------

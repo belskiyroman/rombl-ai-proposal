@@ -24,7 +24,8 @@
     },
     "types": [
       "vitest/globals",
-      "node"
+      "node",
+      "chrome"
     ],
     "esModuleInterop": true,
     "plugins": [

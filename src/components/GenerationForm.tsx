@@ -2,13 +2,16 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { GenerationHandoffLookupResult } from "@/src/lib/generation-handoff";
 import type { GenerationProgressData } from "@/src/lib/generation-progress";
 import type { GenerationSnapshotData } from "@/src/lib/generation-snapshot";
 import { GenerationProgressCard } from "@/src/components/GenerationProgressCard";
@@ -50,10 +53,21 @@ const defaultValues: GenerationFormValues = {
 
 export function GenerationForm({ onGenerated }: GenerationFormProps) {
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const handoffId = searchParams.get("handoff");
   const createGenerationProgress = useMutation(api.generate.createGenerationProgress);
   const createProposal = useAction(api.generate.createProposal);
   const candidates = (useQuery(api.profiles.listCandidateProfiles) as CandidateProfileOption[] | undefined) ?? [];
+  const handoffState = useQuery(
+    api.handoffs.getGenerationHandoff,
+    handoffId
+      ? {
+          id: handoffId
+        }
+      : "skip"
+  ) as GenerationHandoffLookupResult | undefined;
   const [activeProgressId, setActiveProgressId] = useState<Id<"generation_progress"> | null>(null);
+  const [appliedHandoffId, setAppliedHandoffId] = useState<string | null>(null);
   const progress = useQuery(
     api.generate.getGenerationProgress,
     activeProgressId ? { id: activeProgressId } : "skip"
@@ -63,6 +77,23 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
     resolver: zodResolver(generationFormSchema),
     defaultValues
   });
+
+  useEffect(() => {
+    if (handoffState?.status !== "available") {
+      return;
+    }
+
+    if (handoffState.handoff._id === appliedHandoffId) {
+      return;
+    }
+
+    form.reset({
+      candidateId: form.getValues("candidateId"),
+      title: handoffState.handoff.jobTitle,
+      description: handoffState.handoff.jobDescription
+    });
+    setAppliedHandoffId(handoffState.handoff._id);
+  }, [appliedHandoffId, form, handoffState]);
 
   const isSubmitting = form.formState.isSubmitting;
 
@@ -115,6 +146,38 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
               Run job understanding, structured retrieval, evidence selection, planning, generation, and critique.
             </CardDescription>
           </div>
+          {handoffId ? (
+            handoffState === undefined ? (
+              <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                Loading imported Upwork job...
+              </div>
+            ) : handoffState.status === "available" ? (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">Imported from Upwork</Badge>
+                  <span className="font-medium">{handoffState.handoff.jobTitle}</span>
+                </div>
+                <p className="mt-2 text-muted-foreground">
+                  The form was prefilled from the current Upwork page. Review the content, choose a candidate, then run
+                  generation manually.
+                </p>
+                <Link
+                  href={handoffState.handoff.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex text-xs text-emerald-700 underline underline-offset-4"
+                >
+                  Open source job page
+                </Link>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {handoffState.status === "expired"
+                  ? "The imported job handoff expired. Paste the job manually or import it again from the extension."
+                  : "The imported job handoff is invalid or missing. You can still paste the job manually below."}
+              </div>
+            )
+          ) : null}
           {candidates.length === 0 ? (
             <Badge variant="outline">Create a candidate profile first</Badge>
           ) : (

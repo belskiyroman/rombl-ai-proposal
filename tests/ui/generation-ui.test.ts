@@ -50,11 +50,14 @@ describe("generation form", () => {
     expect(source).toContain("api.generate.createGenerationProgress");
     expect(source).toContain("api.generate.getGenerationProgress");
     expect(source).toContain("api.profiles.listCandidateProfiles");
+    expect(source).toContain("api.handoffs.getGenerationHandoff");
+    expect(source).toContain("useSearchParams");
     expect(source).toContain("GenerationProgressCard");
     expect(source).toContain("<FormField");
     expect(source).toContain("<Textarea");
     expect(source).toContain("Generate Proposal");
     expect(source).toContain("Candidate ID");
+    expect(source).toContain("Imported from Upwork");
     expect(progressSource).toContain("Generation Progress");
     expect(progressSource).toContain("proposalEngineStepOrder");
     expect(progressSource).toContain("Open Saved Run");

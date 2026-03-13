@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
 import { buildGenerationRunDocument } from "@/convex/generate";
+
+const workspaceRoot = process.cwd();
 
 describe("buildGenerationRunDocument", () => {
   it("persists execution trace, candidate snapshot, retrieved context, and telemetry", () => {
@@ -230,5 +234,13 @@ describe("buildGenerationRunDocument", () => {
     expect(document.retrievedCaseIds).toHaveLength(1);
     expect(document.retrievedFragmentIds).toEqual(["fragment_1"]);
     expect(document.retrievedEvidenceIds).toEqual(["evidence_1"]);
+  });
+
+  it("keeps an async start path that schedules background generation work", () => {
+    const source = fs.readFileSync(path.join(workspaceRoot, "convex/generate.ts"), "utf-8");
+
+    expect(source).toContain("export const startProposalGeneration = mutationGeneric");
+    expect(source).toContain("ctx.scheduler.runAfter(0, internal.generate.runProposalForProgress");
+    expect(source).toContain("export const runProposalForProgress = internalActionGeneric");
   });
 });

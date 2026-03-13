@@ -142,3 +142,25 @@ export const getGenerationRun = queryGeneric({
     });
   }
 });
+
+export const getGenerationRunById = queryGeneric({
+  args: {
+    id: v.string()
+  },
+  handler: async (ctx, args) => {
+    const normalizedId = ctx.db.normalizeId("generation_runs", args.id);
+    if (!normalizedId) {
+      return null;
+    }
+
+    const record = await ctx.db.get(normalizedId);
+    if (!record) {
+      return null;
+    }
+
+    return buildGenerationRunDetail({
+      _id: String(record._id),
+      ...record
+    });
+  }
+});

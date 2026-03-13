@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Rombl Proposal Handoff",
+  "version": "0.1.0",
+  "description": "Capture Upwork jobs and generate grounded proposals without leaving the page.",
+  "permissions": ["storage", "activeTab", "tabs", "sidePanel"],
+  "host_permissions": ["https://www.upwork.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open proposal side panel"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://www.upwork.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
