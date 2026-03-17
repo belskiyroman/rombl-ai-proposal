@@ -18,7 +18,9 @@ describe("candidateProfileFormSchema", () => {
       preferredCtaStyle: "Short confident CTA",
       seniority: "Senior",
       availability: "20h/week",
-      location: "EU"
+      location: "EU",
+      githubUrl: "https://github.com/example",
+      websiteUrl: "https://example.com"
     });
 
     expect(result.success).toBe(true);
@@ -33,6 +35,21 @@ describe("candidateProfileFormSchema", () => {
       toneProfile: "consultative",
       coreDomains: [],
       preferredCtaStyle: "CTA"
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid external profile URLs", () => {
+    const result = candidateProfileFormSchema.safeParse({
+      candidateId: 1,
+      displayName: "Roman",
+      positioningSummary:
+        "Senior full-stack engineer focused on MVP architecture, ownership, API integrations, and high-signal client communication.",
+      toneProfile: "consultative",
+      coreDomains: ["SaaS"],
+      preferredCtaStyle: "CTA",
+      githubUrl: "not-a-url"
     });
 
     expect(result.success).toBe(false);

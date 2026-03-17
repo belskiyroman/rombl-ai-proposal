@@ -24,7 +24,8 @@ export async function POST(request: Request) {
       candidateId: payload.candidateId,
       jobInput: {
         title: payload.title,
-        description: payload.description
+        description: payload.description,
+        proposalQuestions: payload.proposalQuestions
       }
     });
     const response = extensionGenerateResponseSchema.parse(result);

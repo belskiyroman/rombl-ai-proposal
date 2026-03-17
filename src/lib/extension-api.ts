@@ -22,6 +22,7 @@ export const extensionGenerateRequestSchema = z.object({
   candidateId: z.number().int().positive(),
   title: generationJobInputSchema.shape.title,
   description: generationJobInputSchema.shape.description,
+  proposalQuestions: generationJobInputSchema.shape.proposalQuestions,
   sourceSite: extensionSourceSiteSchema,
   sourceUrl: z.string().url()
 });
@@ -69,6 +70,21 @@ export const extensionGenerationProgressSchema = z.object({
 export const extensionGenerationResultSchema = z.object({
   generationRunId: z.string(),
   finalProposal: z.string(),
+  coverLetterCharCount: z.number().int().nonnegative(),
+  questionAnswers: z.array(
+    z.object({
+      position: z.number().int().positive(),
+      prompt: z.string(),
+      answer: z.string()
+    })
+  ),
+  unresolvedQuestions: z.array(
+    z.object({
+      position: z.number().int().positive(),
+      prompt: z.string(),
+      reason: z.string()
+    })
+  ),
   approvalStatus: z.union([z.literal("APPROVED"), z.literal("NEEDS_REVISION")]),
   createdAt: z.number()
 });

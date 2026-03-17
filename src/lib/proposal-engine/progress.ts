@@ -5,8 +5,10 @@ export const proposalEngineStepOrder = [
   "select_evidence",
   "plan_proposal",
   "write_draft",
+  "enforce_length",
   "critique",
-  "revise_if_needed"
+  "revise_if_needed",
+  "answer_questions"
 ] as const;
 
 export type ProposalEngineStep = (typeof proposalEngineStepOrder)[number];
@@ -29,8 +31,10 @@ const proposalEngineStepLabels: Record<string, string> = {
   select_evidence: "Select grounded evidence",
   plan_proposal: "Build proposal plan",
   write_draft: "Write draft",
+  enforce_length: "Fit cover letter to form limit",
   critique: "Evaluate draft",
-  revise_if_needed: "Revise draft"
+  revise_if_needed: "Revise draft",
+  answer_questions: "Answer proposal questions"
 };
 
 export function getProposalEngineStepLabel(step: string): string {

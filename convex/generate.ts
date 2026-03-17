@@ -11,7 +11,25 @@ import { internal } from "./_generated/api";
 
 const generationJobInputValidator = v.object({
   title: v.optional(v.string()),
-  description: v.string()
+  description: v.string(),
+  proposalQuestions: v.array(
+    v.object({
+      position: v.float64(),
+      prompt: v.string()
+    })
+  )
+});
+
+const proposalQuestionAnswerValidator = v.object({
+  position: v.float64(),
+  prompt: v.string(),
+  answer: v.string()
+});
+
+const unresolvedProposalQuestionValidator = v.object({
+  position: v.float64(),
+  prompt: v.string(),
+  reason: v.string()
 });
 
 const selectedEvidenceValidator = v.object({
@@ -371,6 +389,13 @@ function normalizeTelemetrySummary(summary: GenerationTelemetrySummary): Generat
   };
 }
 
+function normalizeGenerationJobInput(jobInput: GenerationJobInput): GenerationJobInput {
+  return {
+    ...jobInput,
+    proposalQuestions: jobInput.proposalQuestions ?? []
+  };
+}
+
 function buildGenerationProgressDocument(args: {
   candidateId: number;
   jobInput: GenerationJobInput;
@@ -408,7 +433,7 @@ function buildGenerationProgressPayload(progress: {
   return {
     _id: progress._id,
     candidateId: progress.candidateId,
-    jobInput: progress.jobInput,
+    jobInput: normalizeGenerationJobInput(progress.jobInput),
     status: progress.status,
     currentStep: progress.currentStep ?? null,
     steps: progress.steps,
@@ -468,14 +493,34 @@ async function executeProposalGeneration(
             toneProfile: string;
             coreDomains: string[];
             preferredCtaStyle: string;
+            externalProfiles?: {
+              githubUrl?: string;
+              websiteUrl?: string;
+              portfolioUrl?: string;
+            };
+            metadata?: {
+              externalProfiles?: {
+                githubUrl?: string;
+                websiteUrl?: string;
+                portfolioUrl?: string;
+              };
+            };
           } | null>)(anyApi.profiles.getCandidateProfileSummary, {
             candidateId
-          }),
-        retrieveContext: ({ candidateId, jobUnderstanding }) =>
+          }).then((profile) =>
+            profile
+              ? {
+                  ...profile,
+                  externalProfiles: profile.externalProfiles ?? profile.metadata?.externalProfiles ?? {}
+                }
+              : null
+          ),
+        retrieveContext: ({ candidateId, jobUnderstanding, proposalQuestions }) =>
           runRetrieveProposalContext(
             {
               candidateId,
-              jobUnderstanding
+              jobUnderstanding,
+              proposalQuestions
             },
             {
               embed: (input) =>
@@ -588,6 +633,9 @@ async function executeProposalGeneration(
       candidateSnapshot: generationDocument.candidateSnapshot,
       jobInput: generationDocument.jobInput,
       finalProposal: result.finalProposal,
+      coverLetterCharCount: result.coverLetterCharCount,
+      questionAnswers: result.questionAnswers,
+      unresolvedQuestions: result.unresolvedQuestions,
       approvalStatus: result.approvalStatus,
       critiqueHistory: result.critiqueHistory,
       executionTrace: result.executionTrace,
@@ -649,6 +697,9 @@ export function buildGenerationRunDocument(args: {
     stepTelemetry: normalizeStepTelemetry(args.result.stepTelemetry),
     telemetrySummary: normalizeTelemetrySummary(args.result.telemetrySummary),
     finalProposal: args.result.finalProposal,
+    coverLetterCharCount: args.result.coverLetterCharCount,
+    questionAnswers: args.result.questionAnswers,
+    unresolvedQuestions: args.result.unresolvedQuestions,
     approvalStatus: args.result.approvalStatus,
     createdAt: args.createdAt,
     updatedAt: args.createdAt
@@ -894,6 +945,9 @@ export const insertGenerationRunRecord = internalMutationGeneric({
       stepTelemetry: v.array(stepTelemetryValidator),
       telemetrySummary: telemetrySummaryValidator,
       finalProposal: v.string(),
+      coverLetterCharCount: v.float64(),
+      questionAnswers: v.array(proposalQuestionAnswerValidator),
+      unresolvedQuestions: v.array(unresolvedProposalQuestionValidator),
       approvalStatus: v.union(v.literal("APPROVED"), v.literal("NEEDS_REVISION")),
       createdAt: v.float64(),
       updatedAt: v.float64()

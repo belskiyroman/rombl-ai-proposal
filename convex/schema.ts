@@ -74,7 +74,28 @@ const candidateProfileMetadataValidator = v.object({
   seniority: v.optional(v.string()),
   availability: v.optional(v.string()),
   location: v.optional(v.string()),
-  notes: v.optional(v.string())
+  notes: v.optional(v.string()),
+  externalProfiles: v.optional(
+    v.object({
+      githubUrl: v.optional(v.string()),
+      websiteUrl: v.optional(v.string()),
+      portfolioUrl: v.optional(v.string())
+    })
+  )
+});
+const proposalQuestionValidator = v.object({
+  position: v.float64(),
+  prompt: v.string()
+});
+const proposalQuestionAnswerValidator = v.object({
+  position: v.float64(),
+  prompt: v.string(),
+  answer: v.string()
+});
+const unresolvedProposalQuestionValidator = v.object({
+  position: v.float64(),
+  prompt: v.string(),
+  reason: v.string()
 });
 const candidateEvidenceStructuredValidator = v.object({
   title: v.optional(v.string()),
@@ -113,7 +134,8 @@ const draftCritiqueValidator = v.object({
 });
 const generationJobInputValidator = v.object({
   title: v.optional(v.string()),
-  description: v.string()
+  description: v.string(),
+  proposalQuestions: v.optional(v.array(proposalQuestionValidator))
 });
 const generationProgressStatusValidator = v.union(
   v.literal("QUEUED"),
@@ -368,6 +390,7 @@ export default defineSchema({
     pageTitle: v.string(),
     jobTitle: v.string(),
     jobDescription: v.string(),
+    proposalQuestions: v.optional(v.array(proposalQuestionValidator)),
     capturedAt: v.float64(),
     createdAt: v.float64(),
     expiresAt: v.float64()
@@ -409,6 +432,9 @@ export default defineSchema({
     stepTelemetry: v.optional(v.array(stepTelemetryValidator)),
     telemetrySummary: v.optional(telemetrySummaryValidator),
     finalProposal: v.string(),
+    coverLetterCharCount: v.optional(v.float64()),
+    questionAnswers: v.optional(v.array(proposalQuestionAnswerValidator)),
+    unresolvedQuestions: v.optional(v.array(unresolvedProposalQuestionValidator)),
     approvalStatus: v.union(v.literal("APPROVED"), v.literal("NEEDS_REVISION")),
     createdAt: v.float64(),
     updatedAt: v.float64()

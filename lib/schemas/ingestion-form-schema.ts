@@ -10,7 +10,10 @@ export const candidateProfileFormSchema = z.object({
   seniority: z.string().trim().optional(),
   availability: z.string().trim().optional(),
   location: z.string().trim().optional(),
-  notes: z.string().trim().optional()
+  notes: z.string().trim().optional(),
+  githubUrl: z.union([z.string().trim().url("Enter a valid GitHub URL"), z.literal("")]).optional(),
+  websiteUrl: z.union([z.string().trim().url("Enter a valid website URL"), z.literal("")]).optional(),
+  portfolioUrl: z.union([z.string().trim().url("Enter a valid portfolio URL"), z.literal("")]).optional()
 });
 
 export const candidateEvidenceFormSchema = z.object({

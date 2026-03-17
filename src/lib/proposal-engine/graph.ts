@@ -4,13 +4,22 @@ import {
   buildCritiquePrompt,
   buildEvidenceSelectionPrompt,
   buildJobUnderstandingPrompt,
+  buildLengthCompressionPrompt,
   buildProposalPlanPrompt,
+  buildQuestionAnsweringPrompt,
   buildRevisionPrompt,
   buildWriterPrompt,
   type ProposalEngineRunners
 } from "./agents";
 import type { GenerationStepTelemetry } from "../ai/telemetry";
-import type { CopyRisk, DraftCritique, JobUnderstanding, ProposalPlan } from "./schemas";
+import { deterministicallyReduceCoverLetter, getProposalLengthBudget } from "./length";
+import {
+  maxProposalCoverLetterChars,
+  type CopyRisk,
+  type DraftCritique,
+  type JobUnderstanding,
+  type ProposalPlan
+} from "./schemas";
 import type { ProposalEngineProgressEvent } from "./progress";
 import type { RetrievedContextBundle } from "./state";
 import type { ProposalEngineState } from "./state";
@@ -28,6 +37,8 @@ export const ProposalEngineStateAnnotation = Annotation.Root({
   critiqueHistory: Annotation<DraftCritique[]>,
   copyRisk: Annotation<CopyRisk | null>,
   finalProposal: Annotation<string>,
+  questionAnswers: Annotation<ProposalEngineState["questionAnswers"]>,
+  unresolvedQuestions: Annotation<ProposalEngineState["unresolvedQuestions"]>,
   revisionCount: Annotation<number>,
   maxRevisions: Annotation<number>,
   executionTrace: Annotation<string[]>,
@@ -39,6 +50,7 @@ export interface ProposalEngineGraphDependencies {
   retrieveContext: (args: {
     candidateId: number;
     jobUnderstanding: JobUnderstanding;
+    proposalQuestions: ProposalEngineState["jobInput"]["proposalQuestions"];
   }) => Promise<{
     retrievedContext: RetrievedContextBundle;
     stepTelemetry: GenerationStepTelemetry[];
@@ -52,6 +64,10 @@ export interface ProposalEngineGraphDependencies {
 
 function appendTrace(state: ProposalEngineState, step: string): string[] {
   return [...state.executionTrace, step];
+}
+
+function appendTraceEntries(state: ProposalEngineState, steps: string[]): string[] {
+  return [...state.executionTrace, ...steps];
 }
 
 async function notifyProgress(
@@ -84,6 +100,14 @@ function ensureProposalContext(state: ProposalEngineState): {
   };
 }
 
+function getSelectedFragments(retrievedContext: RetrievedContextBundle, proposalPlan: ProposalPlan) {
+  return [
+    ...retrievedContext.fragments.openings,
+    ...retrievedContext.fragments.proofs,
+    ...retrievedContext.fragments.closings
+  ].filter((fragment) => proposalPlan.selectedFragmentIds.includes(fragment._id));
+}
+
 async function jobUnderstandingNode(
   state: ProposalEngineState,
   dependencies: ProposalEngineGraphDependencies
@@ -100,6 +124,7 @@ async function jobUnderstandingNode(
     buildJobUnderstandingPrompt({
       title: state.jobInput.title,
       description: state.jobInput.description,
+      proposalQuestions: state.jobInput.proposalQuestions,
       candidateProfileSummary: state.candidateProfile.positioningSummary
     })
   );
@@ -145,7 +170,8 @@ async function retrieveContextNode(
 
   const retrievedContext = await dependencies.retrieveContext({
     candidateId: state.candidateProfile.candidateId,
-    jobUnderstanding: state.jobUnderstanding
+    jobUnderstanding: state.jobUnderstanding,
+    proposalQuestions: state.jobInput.proposalQuestions
   });
   const progressFinishedAt = Date.now();
 
@@ -339,11 +365,8 @@ async function writeDraftNode(
     attempt,
     startedAt: progressStartedAt
   });
-  const selectedFragments = [
-    ...retrievedContext.fragments.openings,
-    ...retrievedContext.fragments.proofs,
-    ...retrievedContext.fragments.closings
-  ].filter((fragment) => proposalPlan.selectedFragmentIds.includes(fragment._id));
+  const selectedFragments = getSelectedFragments(retrievedContext, proposalPlan);
+  const lengthBudget = getProposalLengthBudget(jobUnderstanding.proposalStrategy.length);
 
   const currentDraft = await dependencies.runners.writeDraft.invokeWithTelemetry(
     buildWriterPrompt({
@@ -356,7 +379,9 @@ async function writeDraftNode(
         type: fragment.fragmentType,
         text: fragment.text
       })),
-      proposalPlan
+      proposalPlan,
+      softTargetChars: lengthBudget.softTargetChars,
+      hardMaxChars: lengthBudget.hardMaxChars
     })
   );
   const progressFinishedAt = Date.now();
@@ -381,6 +406,112 @@ async function writeDraftNode(
       stage: "write_draft",
       attempt
     })
+  };
+}
+
+async function enforceLengthNode(
+  state: ProposalEngineState,
+  dependencies: ProposalEngineGraphDependencies
+): Promise<ProposalEngineState> {
+  const { jobUnderstanding, proposalPlan } = ensureProposalContext(state);
+  const attempt = Math.max(1, state.draftHistory.length);
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "enforce_length",
+    status: "started",
+    attempt,
+    startedAt: progressStartedAt
+  });
+
+  const lengthBudget = getProposalLengthBudget(jobUnderstanding.proposalStrategy.length);
+
+  if (state.currentDraft.length <= lengthBudget.hardMaxChars) {
+    const progressFinishedAt = Date.now();
+    await notifyProgress(dependencies, {
+      step: "enforce_length",
+      status: "completed",
+      attempt,
+      startedAt: progressStartedAt,
+      finishedAt: progressFinishedAt,
+      durationMs: progressFinishedAt - progressStartedAt
+    });
+
+    return {
+      ...state,
+      executionTrace: appendTrace(state, "enforce_length.noop"),
+      stepTelemetry: appendStepTelemetry(state, {
+        step: "enforce_length.noop",
+        stage: "length_enforcement",
+        kind: "query",
+        startedAt: progressStartedAt,
+        finishedAt: progressFinishedAt,
+        durationMs: progressFinishedAt - progressStartedAt,
+        attempt
+      })
+    };
+  }
+
+  const compressedDraft = await dependencies.runners.reviseDraft.invokeWithTelemetry(
+    buildLengthCompressionPrompt({
+      originalDraft: state.currentDraft,
+      jobUnderstanding,
+      proposalPlan,
+      selectedEvidence: state.selectedEvidence,
+      softTargetChars: lengthBudget.softTargetChars,
+      hardMaxChars: lengthBudget.hardMaxChars
+    })
+  );
+
+  const traceEntries = ["enforce_length.compress"];
+  let nextDraft = compressedDraft.output.trim() || state.currentDraft;
+  let nextDraftHistory = nextDraft === state.currentDraft ? state.draftHistory : [...state.draftHistory, nextDraft];
+  let nextTelemetry = appendStepTelemetry(state, {
+    ...compressedDraft.telemetry,
+    step: "enforce_length.compress",
+    stage: "length_enforcement",
+    attempt
+  });
+
+  if (nextDraft.length > lengthBudget.hardMaxChars) {
+    const deterministicStartedAt = Date.now();
+    const deterministicReduction = deterministicallyReduceCoverLetter(nextDraft, lengthBudget.hardMaxChars);
+    const deterministicFinishedAt = Date.now();
+
+    nextDraft = deterministicReduction.output;
+    if (nextDraft !== nextDraftHistory[nextDraftHistory.length - 1]) {
+      nextDraftHistory = [...nextDraftHistory, nextDraft];
+    }
+    traceEntries.push("enforce_length.reduce");
+    nextTelemetry = [
+      ...nextTelemetry,
+      {
+        step: `enforce_length.${deterministicReduction.strategy}`,
+        stage: "length_enforcement",
+        kind: "query",
+        startedAt: deterministicStartedAt,
+        finishedAt: deterministicFinishedAt,
+        durationMs: deterministicFinishedAt - deterministicStartedAt,
+        attempt
+      }
+    ];
+  }
+
+  const progressFinishedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "enforce_length",
+    status: "completed",
+    attempt,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
+
+  return {
+    ...state,
+    currentDraft: nextDraft,
+    draftHistory: nextDraftHistory,
+    executionTrace: appendTraceEntries(state, traceEntries),
+    stepTelemetry: nextTelemetry
   };
 }
 
@@ -412,13 +543,24 @@ async function critiqueNode(
     })
   );
 
-  const latestCritique: DraftCritique = {
+  let latestCritique: DraftCritique = {
     ...critique.output,
     copyRisk: {
       ...deterministicCopyRisk,
       reasons: [...new Set([...deterministicCopyRisk.reasons, ...critique.output.copyRisk.reasons])]
     }
   };
+  if (state.currentDraft.length > maxProposalCoverLetterChars) {
+    latestCritique = {
+      ...latestCritique,
+      approvalStatus: "NEEDS_REVISION",
+      issues: [...latestCritique.issues, `Cover letter exceeds ${maxProposalCoverLetterChars} characters.`],
+      revisionInstructions: [
+        ...latestCritique.revisionInstructions,
+        `Reduce the cover letter to ${maxProposalCoverLetterChars} characters or fewer while preserving only the strongest grounded evidence.`
+      ]
+    };
+  }
 
   const nextRevisionCount =
     latestCritique.approvalStatus === "NEEDS_REVISION" ? state.revisionCount + 1 : state.revisionCount;
@@ -470,11 +612,8 @@ async function reviseIfNeededNode(
     startedAt: progressStartedAt
   });
 
-  const selectedFragments = [
-    ...retrievedContext.fragments.openings,
-    ...retrievedContext.fragments.proofs,
-    ...retrievedContext.fragments.closings
-  ].filter((fragment) => proposalPlan.selectedFragmentIds.includes(fragment._id));
+  const selectedFragments = getSelectedFragments(retrievedContext, proposalPlan);
+  const lengthBudget = getProposalLengthBudget(jobUnderstanding.proposalStrategy.length);
 
   const revisedDraft = await dependencies.runners.reviseDraft.invokeWithTelemetry(
     buildRevisionPrompt({
@@ -487,7 +626,9 @@ async function reviseIfNeededNode(
         id: fragment._id,
         type: fragment.fragmentType,
         text: fragment.text
-      }))
+      })),
+      softTargetChars: lengthBudget.softTargetChars,
+      hardMaxChars: lengthBudget.hardMaxChars
     })
   );
   const progressFinishedAt = Date.now();
@@ -515,7 +656,158 @@ async function reviseIfNeededNode(
   };
 }
 
-function routeAfterCritique(state: ProposalEngineState): "revise_if_needed" | typeof END {
+function isLikelyLinkQuestion(prompt: string): boolean {
+  return /github|portfolio|website|web site|url|link|profile/i.test(prompt);
+}
+
+function buildExactProfileAnswer(
+  prompt: string,
+  externalProfiles: ProposalEngineState["candidateProfile"]["externalProfiles"]
+): string | null {
+  const normalized = prompt.toLowerCase();
+  const wantsGithub = normalized.includes("github");
+  const wantsPortfolio = normalized.includes("portfolio");
+  const wantsWebsite = normalized.includes("website") || normalized.includes("web site");
+  const wantsProfile = normalized.includes("profile");
+  const lines: string[] = [];
+
+  if (wantsGithub && externalProfiles.githubUrl) {
+    lines.push(`GitHub: ${externalProfiles.githubUrl}`);
+  }
+  if (wantsPortfolio && externalProfiles.portfolioUrl) {
+    lines.push(`Portfolio: ${externalProfiles.portfolioUrl}`);
+  }
+  if (wantsWebsite && externalProfiles.websiteUrl) {
+    lines.push(`Website: ${externalProfiles.websiteUrl}`);
+  }
+
+  if (lines.length === 0 && wantsProfile) {
+    if (externalProfiles.githubUrl) {
+      lines.push(`GitHub: ${externalProfiles.githubUrl}`);
+    }
+    if (externalProfiles.portfolioUrl) {
+      lines.push(`Portfolio: ${externalProfiles.portfolioUrl}`);
+    }
+    if (externalProfiles.websiteUrl) {
+      lines.push(`Website: ${externalProfiles.websiteUrl}`);
+    }
+  }
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+async function answerQuestionsNode(
+  state: ProposalEngineState,
+  dependencies: ProposalEngineGraphDependencies
+): Promise<ProposalEngineState> {
+  const { retrievedContext } = ensureProposalContext(state);
+  const questions = state.jobInput.proposalQuestions;
+  if (questions.length === 0) {
+    return state;
+  }
+
+  const progressStartedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "answer_questions",
+    status: "started",
+    attempt: 1,
+    startedAt: progressStartedAt
+  });
+
+  const answeredByPosition = new Map<number, ProposalEngineState["questionAnswers"][number]>();
+  const unresolvedByPosition = new Map<number, ProposalEngineState["unresolvedQuestions"][number]>();
+  const llmQuestions: typeof questions = [];
+
+  for (const question of questions) {
+    const exactAnswer = buildExactProfileAnswer(question.prompt, state.candidateProfile.externalProfiles);
+    if (exactAnswer) {
+      answeredByPosition.set(question.position, {
+        position: question.position,
+        prompt: question.prompt,
+        answer: exactAnswer
+      });
+      continue;
+    }
+
+    if (isLikelyLinkQuestion(question.prompt)) {
+      unresolvedByPosition.set(question.position, {
+        position: question.position,
+        prompt: question.prompt,
+        reason: "Matching external profile URL is not configured for this candidate."
+      });
+      continue;
+    }
+
+    llmQuestions.push(question);
+  }
+
+  let telemetry: GenerationStepTelemetry | null = null;
+  if (llmQuestions.length > 0) {
+    const answeredQuestions = await dependencies.runners.answerQuestions.invokeWithTelemetry(
+      buildQuestionAnsweringPrompt({
+        questions: llmQuestions,
+        externalProfiles: state.candidateProfile.externalProfiles,
+        selectedEvidence: state.selectedEvidence,
+        retrievedEvidence: retrievedContext.evidenceCandidates.map((item) => ({
+          id: item._id,
+          text: item.text,
+          type: item.type,
+          tags: item.tags
+        }))
+      })
+    );
+
+    telemetry = {
+      ...answeredQuestions.telemetry,
+      step: "answer_questions",
+      stage: "answer_questions",
+      attempt: 1
+    };
+
+    for (const answer of answeredQuestions.output.answers) {
+      answeredByPosition.set(answer.position, answer);
+      unresolvedByPosition.delete(answer.position);
+    }
+
+    for (const unresolved of answeredQuestions.output.unresolved) {
+      if (!answeredByPosition.has(unresolved.position)) {
+        unresolvedByPosition.set(unresolved.position, unresolved);
+      }
+    }
+  }
+
+  for (const question of questions) {
+    if (!answeredByPosition.has(question.position) && !unresolvedByPosition.has(question.position)) {
+      unresolvedByPosition.set(question.position, {
+        position: question.position,
+        prompt: question.prompt,
+        reason: "Could not produce a grounded answer from the available evidence."
+      });
+    }
+  }
+
+  const progressFinishedAt = Date.now();
+  await notifyProgress(dependencies, {
+    step: "answer_questions",
+    status: "completed",
+    attempt: 1,
+    startedAt: progressStartedAt,
+    finishedAt: progressFinishedAt,
+    durationMs: progressFinishedAt - progressStartedAt
+  });
+
+  return {
+    ...state,
+    questionAnswers: Array.from(answeredByPosition.values()).sort((left, right) => left.position - right.position),
+    unresolvedQuestions: Array.from(unresolvedByPosition.values()).sort(
+      (left, right) => left.position - right.position
+    ),
+    executionTrace: appendTrace(state, "answer_questions"),
+    stepTelemetry: telemetry ? appendStepTelemetry(state, telemetry) : state.stepTelemetry
+  };
+}
+
+function routeAfterCritique(state: ProposalEngineState): "revise_if_needed" | "answer_questions" | typeof END {
   if (!state.latestCritique) {
     return END;
   }
@@ -524,7 +816,7 @@ function routeAfterCritique(state: ProposalEngineState): "revise_if_needed" | ty
     return "revise_if_needed";
   }
 
-  return END;
+  return state.jobInput.proposalQuestions.length > 0 ? "answer_questions" : END;
 }
 
 export function createProposalEngineGraph(dependencies: ProposalEngineGraphDependencies) {
@@ -534,16 +826,20 @@ export function createProposalEngineGraph(dependencies: ProposalEngineGraphDepen
     .addNode("select_evidence", (state: ProposalEngineState) => selectEvidenceNode(state, dependencies))
     .addNode("plan_proposal", (state: ProposalEngineState) => planProposalNode(state, dependencies))
     .addNode("write_draft", (state: ProposalEngineState) => writeDraftNode(state, dependencies))
+    .addNode("enforce_length", (state: ProposalEngineState) => enforceLengthNode(state, dependencies))
     .addNode("critique", (state: ProposalEngineState) => critiqueNode(state, dependencies))
     .addNode("revise_if_needed", (state: ProposalEngineState) => reviseIfNeededNode(state, dependencies))
+    .addNode("answer_questions", (state: ProposalEngineState) => answerQuestionsNode(state, dependencies))
     .addEdge(START, "job_understanding")
     .addEdge("job_understanding", "retrieve_context")
     .addEdge("retrieve_context", "select_evidence")
     .addEdge("select_evidence", "plan_proposal")
     .addEdge("plan_proposal", "write_draft")
-    .addEdge("write_draft", "critique")
-    .addConditionalEdges("critique", routeAfterCritique, ["revise_if_needed", END])
-    .addEdge("revise_if_needed", "critique");
+    .addEdge("write_draft", "enforce_length")
+    .addEdge("enforce_length", "critique")
+    .addConditionalEdges("critique", routeAfterCritique, ["revise_if_needed", "answer_questions", END])
+    .addEdge("revise_if_needed", "enforce_length")
+    .addEdge("answer_questions", END);
 }
 
 export async function runProposalEngineGraph(

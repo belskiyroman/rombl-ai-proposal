@@ -49,6 +49,11 @@ interface CandidateProfileDetail {
     availability?: string;
     location?: string;
     notes?: string;
+    externalProfiles?: {
+      githubUrl?: string;
+      websiteUrl?: string;
+      portfolioUrl?: string;
+    };
   };
   activeEvidenceCount: number;
   historicalEvidenceCount: number;
@@ -85,7 +90,10 @@ function createProfileDefaults(candidateId: number): CandidateProfileFormValues 
     seniority: "",
     availability: "",
     location: "",
-    notes: ""
+    notes: "",
+    githubUrl: "",
+    websiteUrl: "",
+    portfolioUrl: ""
   };
 }
 
@@ -189,7 +197,10 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
         seniority: selectedProfile.metadata.seniority ?? "",
         availability: selectedProfile.metadata.availability ?? "",
         location: selectedProfile.metadata.location ?? "",
-        notes: selectedProfile.metadata.notes ?? ""
+        notes: selectedProfile.metadata.notes ?? "",
+        githubUrl: selectedProfile.metadata.externalProfiles?.githubUrl ?? "",
+        websiteUrl: selectedProfile.metadata.externalProfiles?.websiteUrl ?? "",
+        portfolioUrl: selectedProfile.metadata.externalProfiles?.portfolioUrl ?? ""
       });
     } else {
       profileForm.reset(createProfileDefaults(selectedCandidateId));
@@ -252,7 +263,12 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
           seniority: values.seniority || undefined,
           availability: values.availability || undefined,
           location: values.location || undefined,
-          notes: values.notes || undefined
+          notes: values.notes || undefined,
+          externalProfiles: {
+            githubUrl: values.githubUrl || undefined,
+            websiteUrl: values.websiteUrl || undefined,
+            portfolioUrl: values.portfolioUrl || undefined
+          }
         }
       });
 
@@ -778,6 +794,48 @@ export function IngestionForm({ onSuccess }: IngestionFormProps) {
                           <FormControl>
                             <Input {...field} placeholder="Founder-friendly, strong architecture ownership..." />
                           </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <FormField
+                      control={profileForm.control}
+                      name="githubUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>GitHub URL</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="https://github.com/username" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="websiteUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Website URL</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="https://example.com" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={profileForm.control}
+                      name="portfolioUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Portfolio URL</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="https://portfolio.example.com" />
+                          </FormControl>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />

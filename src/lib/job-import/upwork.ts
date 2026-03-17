@@ -6,6 +6,10 @@ export interface ExtractedUpworkJobPage {
   pageTitle: string;
   jobTitle: string;
   jobDescription: string;
+  proposalQuestions: Array<{
+    position: number;
+    prompt: string;
+  }>;
   metadata: {
     skillsCount: number;
     projectType: "hourly" | "fixedPrice" | "hourly/fixedPrice";
@@ -49,6 +53,7 @@ export function extractUpworkJobPageSnapshot(args: {
     pageTitle: args.pageTitle.trim(),
     jobTitle,
     jobDescription,
+    proposalQuestions: parsed.proposalQuestions,
     metadata: {
       skillsCount: parsed.skills.length,
       projectType: parsed.type

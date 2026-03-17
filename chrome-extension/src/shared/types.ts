@@ -4,6 +4,10 @@ export interface ExtensionCapturedJob {
   pageTitle: string;
   jobTitle: string;
   jobDescription: string;
+  proposalQuestions: Array<{
+    position: number;
+    prompt: string;
+  }>;
   capturedAt: number;
   parserMeta: {
     skillsCount: number;
@@ -16,6 +20,12 @@ export interface ExtensionPanelState {
   capturedJob: ExtensionCapturedJob | null;
   selectedCandidateId: number | null;
   activeProgressId: string | null;
+  autofillStatus:
+    | {
+        status: "SUCCESS" | "FAILED";
+        message: string;
+      }
+    | null;
   latestStatus: {
     status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
     currentStepLabel: string | null;
@@ -32,6 +42,17 @@ export interface ExtensionPanelState {
   finalResult: {
     generationRunId: string;
     finalProposal: string;
+    coverLetterCharCount: number;
+    questionAnswers: Array<{
+      position: number;
+      prompt: string;
+      answer: string;
+    }>;
+    unresolvedQuestions: Array<{
+      position: number;
+      prompt: string;
+      reason: string;
+    }>;
     approvalStatus: "APPROVED" | "NEEDS_REVISION";
     createdAt: number;
   } | null;
@@ -42,6 +63,23 @@ export type ContentExtractionRequest = {
   type: "extract-job";
 };
 
+export type ContentFillSubmissionRequest = {
+  type: "fill-generated-submission";
+  payload: {
+    coverLetter: string;
+    questionAnswers: Array<{
+      position: number;
+      prompt: string;
+      answer: string;
+    }>;
+    unresolvedQuestions: Array<{
+      position: number;
+      prompt: string;
+      reason: string;
+    }>;
+  };
+};
+
 export type ContentExtractionResponse =
   | {
       status: "success";
@@ -50,6 +88,15 @@ export type ContentExtractionResponse =
   | {
       status: "unsupported";
       message: string;
+    }
+  | {
+      status: "error";
+      message: string;
+    };
+
+export type ContentFillSubmissionResponse =
+  | {
+      status: "success";
     }
   | {
       status: "error";

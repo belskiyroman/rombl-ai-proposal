@@ -4,7 +4,9 @@ import type {
   EvidenceType,
   GenerationJobInput,
   JobUnderstanding,
-  ProposalPlan
+  ProposalQuestionAnswer,
+  ProposalPlan,
+  UnresolvedProposalQuestion
 } from "./schemas";
 import type { GenerationStepTelemetry } from "../ai/telemetry";
 import type { RetrievedEvidence, RetrievedFragment, RetrievedHistoricalCase } from "./retrieval";
@@ -16,6 +18,11 @@ export interface CandidateProfileSummary {
   toneProfile: string;
   coreDomains: string[];
   preferredCtaStyle: string;
+  externalProfiles: {
+    githubUrl?: string;
+    websiteUrl?: string;
+    portfolioUrl?: string;
+  };
 }
 
 export interface RetrievedContextBundle {
@@ -48,6 +55,8 @@ export interface ProposalEngineState {
   critiqueHistory: DraftCritique[];
   copyRisk: CopyRisk | null;
   finalProposal: string;
+  questionAnswers: ProposalQuestionAnswer[];
+  unresolvedQuestions: UnresolvedProposalQuestion[];
   revisionCount: number;
   maxRevisions: number;
   executionTrace: string[];
@@ -74,6 +83,8 @@ export function createProposalEngineInitialState(input: {
     critiqueHistory: [],
     copyRisk: null,
     finalProposal: "",
+    questionAnswers: [],
+    unresolvedQuestions: [],
     revisionCount: 0,
     maxRevisions: input.maxRevisions ?? defaultMaxProposalRevisions,
     executionTrace: [],

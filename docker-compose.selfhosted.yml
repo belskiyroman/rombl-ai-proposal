@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-convex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.selfhosted}
+      POSTGRES_DB: ${POSTGRES_DB:-convex_self_hosted}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    image: ghcr.io/get-convex/convex-backend:${CONVEX_SELF_HOSTED_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    stop_grace_period: 10s
+    stop_signal: SIGINT
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3210:3210"
+      - "3211:3211"
+    volumes:
+      - convex_data:/convex/data
+    environment:
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-convex}:${POSTGRES_PASSWORD}@postgres:5432
+      DO_NOT_REQUIRE_SSL: ${DO_NOT_REQUIRE_SSL:-1}
+      INSTANCE_NAME: ${INSTANCE_NAME:-convex-self-hosted}
+      INSTANCE_SECRET: ${INSTANCE_SECRET:?Set INSTANCE_SECRET in .env.selfhosted}
+      CONVEX_CLOUD_ORIGIN: ${CONVEX_CLOUD_ORIGIN:?Set CONVEX_CLOUD_ORIGIN in .env.selfhosted}
+      CONVEX_SITE_ORIGIN: ${CONVEX_SITE_ORIGIN:?Set CONVEX_SITE_ORIGIN in .env.selfhosted}
+      RUST_LOG: ${RUST_LOG:-info}
+      DISABLE_METRICS_ENDPOINT: ${DISABLE_METRICS_ENDPOINT:-true}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:3210/version
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  convex_data:

@@ -1,4 +1,5 @@
 import type { GenerationStepTelemetry, GenerationTelemetrySummary } from "./ai/telemetry";
+import type { ProposalQuestion, ProposalQuestionAnswer, UnresolvedProposalQuestion } from "./proposal-engine/schemas";
 
 export interface GenerationRunCandidateSnapshot {
   candidateId: number;
@@ -87,8 +88,12 @@ export interface GenerationSnapshotData {
   jobInput: {
     title?: string;
     description: string;
+    proposalQuestions: ProposalQuestion[];
   };
   finalProposal: string;
+  coverLetterCharCount: number;
+  questionAnswers: ProposalQuestionAnswer[];
+  unresolvedQuestions: UnresolvedProposalQuestion[];
   approvalStatus: "APPROVED" | "NEEDS_REVISION";
   critiqueHistory: GenerationRunCritique[];
   executionTrace: string[];

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { useForm } from "react-hook-form";
+import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { api } from "@/convex/_generated/api";
@@ -26,7 +26,13 @@ import { useToast } from "@/src/hooks/use-toast";
 const generationFormSchema = z.object({
   candidateId: z.coerce.number().int().positive("Candidate ID is required"),
   title: z.string().trim().optional(),
-  description: z.string().trim().min(40, "Paste a more detailed client job description")
+  description: z.string().trim().min(40, "Paste a more detailed client job description"),
+  proposalQuestions: z.array(
+    z.object({
+      position: z.coerce.number().int().positive(),
+      prompt: z.string().trim().min(1, "Question prompt is required")
+    })
+  )
 });
 
 type GenerationFormValues = z.infer<typeof generationFormSchema>;
@@ -48,7 +54,8 @@ interface GenerationFormProps {
 const defaultValues: GenerationFormValues = {
   candidateId: 1,
   title: "",
-  description: ""
+  description: "",
+  proposalQuestions: []
 };
 
 export function GenerationForm({ onGenerated }: GenerationFormProps) {
@@ -77,6 +84,10 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
     resolver: zodResolver(generationFormSchema),
     defaultValues
   });
+  const proposalQuestionsFieldArray = useFieldArray({
+    control: form.control,
+    name: "proposalQuestions"
+  });
 
   useEffect(() => {
     if (handoffState?.status !== "available") {
@@ -90,7 +101,8 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
     form.reset({
       candidateId: form.getValues("candidateId"),
       title: handoffState.handoff.jobTitle,
-      description: handoffState.handoff.jobDescription
+      description: handoffState.handoff.jobDescription,
+      proposalQuestions: handoffState.handoff.proposalQuestions
     });
     setAppliedHandoffId(handoffState.handoff._id);
   }, [appliedHandoffId, form, handoffState]);
@@ -104,7 +116,13 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
         candidateId: values.candidateId,
         jobInput: {
           title: values.title || undefined,
-          description: values.description
+          description: values.description,
+          proposalQuestions: values.proposalQuestions
+            .map((question, index) => ({
+              position: index + 1,
+              prompt: question.prompt.trim()
+            }))
+            .filter((question) => question.prompt.length > 0)
         }
       });
       setActiveProgressId(progressId as Id<"generation_progress">);
@@ -113,7 +131,13 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
         candidateId: values.candidateId,
         jobInput: {
           title: values.title || undefined,
-          description: values.description
+          description: values.description,
+          proposalQuestions: values.proposalQuestions
+            .map((question, index) => ({
+              position: index + 1,
+              prompt: question.prompt.trim()
+            }))
+            .filter((question) => question.prompt.length > 0)
         },
         progressId: progressId as Id<"generation_progress">
       });
@@ -245,6 +269,63 @@ export function GenerationForm({ onGenerated }: GenerationFormProps) {
                   </FormItem>
                 )}
               />
+
+              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Proposal Questions</p>
+                    <p className="text-xs text-muted-foreground">
+                      Captured from the Upwork proposal page. Edit prompts before generation if needed.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      proposalQuestionsFieldArray.append({
+                        position: proposalQuestionsFieldArray.fields.length + 1,
+                        prompt: ""
+                      })
+                    }
+                  >
+                    Add Question
+                  </Button>
+                </div>
+
+                {proposalQuestionsFieldArray.fields.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No proposal questions captured for this submission.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {proposalQuestionsFieldArray.fields.map((field, index) => (
+                      <FormField
+                        key={field.id}
+                        control={form.control}
+                        name={`proposalQuestions.${index}.prompt`}
+                        render={({ field: promptField }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between gap-3">
+                              <FormLabel>Question {index + 1}</FormLabel>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => proposalQuestionsFieldArray.remove(index)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            <FormControl>
+                              <Textarea {...promptField} rows={3} placeholder="Captured proposal question" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <Button type="submit" disabled={isSubmitting || candidates.length === 0} className="w-full sm:w-auto">
                 {isSubmitting ? (

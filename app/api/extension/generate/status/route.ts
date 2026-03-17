@@ -65,6 +65,9 @@ export async function GET(request: Request) {
         : {
             generationRunId: result.generationRunId,
             finalProposal: result.finalProposal,
+            coverLetterCharCount: result.coverLetterCharCount ?? result.finalProposal.length,
+            questionAnswers: result.questionAnswers ?? [],
+            unresolvedQuestions: result.unresolvedQuestions ?? [],
             approvalStatus: result.approvalStatus,
             createdAt: result.createdAt
           }

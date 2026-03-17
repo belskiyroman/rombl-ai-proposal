@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { proposalQuestionSchema } from "./proposal-engine/schemas";
+
 export const generationHandoffTtlMs = 24 * 60 * 60 * 1000;
 
 export const generationHandoffSourceSiteSchema = z.literal("upwork");
@@ -10,6 +12,7 @@ export const generationHandoffCreateRequestSchema = z.object({
   pageTitle: z.string().trim().min(1).max(300),
   jobTitle: z.string().trim().min(1).max(300),
   jobDescription: z.string().trim().min(40).max(50_000),
+  proposalQuestions: z.array(proposalQuestionSchema).default([]),
   capturedAt: z.number().int().nonnegative()
 });
 
@@ -29,6 +32,10 @@ export interface StoredGenerationHandoff {
   pageTitle: string;
   jobTitle: string;
   jobDescription: string;
+  proposalQuestions: Array<{
+    position: number;
+    prompt: string;
+  }>;
   capturedAt: number;
   createdAt: number;
   expiresAt: number;

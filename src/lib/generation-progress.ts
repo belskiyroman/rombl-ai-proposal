@@ -23,6 +23,10 @@ export interface GenerationProgressData {
   jobInput: {
     title?: string;
     description: string;
+    proposalQuestions: Array<{
+      position: number;
+      prompt: string;
+    }>;
   };
   status: GenerationProgressStatus;
   currentStep: GenerationProgressCurrentStep | null;

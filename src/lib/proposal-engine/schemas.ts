@@ -14,8 +14,26 @@ export const fragmentTypeSchema = z.enum(["opening", "proof", "closing"]);
 export const jobLengthBucketSchema = z.enum(["short", "medium", "long"]);
 
 export const proposalLengthBucketSchema = z.enum(["short", "medium", "long"]);
+export const maxProposalCoverLetterChars = 5000;
 
 export const toneProfileSchema = z.enum(["concise", "consultative", "confident", "technical", "founder-like"]);
+
+export const proposalQuestionSchema = z.object({
+  position: z.number().int().positive(),
+  prompt: z.string().trim().min(1)
+});
+
+export const proposalQuestionAnswerSchema = z.object({
+  position: z.number().int().positive(),
+  prompt: z.string().trim().min(1),
+  answer: z.string().trim().min(1)
+});
+
+export const unresolvedProposalQuestionSchema = z.object({
+  position: z.number().int().positive(),
+  prompt: z.string().trim().min(1),
+  reason: z.string().trim().min(1)
+});
 
 export const proposalStrategySchema = z.object({
   tone: toneProfileSchema,
@@ -112,6 +130,12 @@ export const draftCritiqueSchema = z.object({
   copyRisk: copyRiskSchema
 });
 
+export const candidateExternalProfilesSchema = z.object({
+  githubUrl: z.string().trim().url().optional(),
+  websiteUrl: z.string().trim().url().optional(),
+  portfolioUrl: z.string().trim().url().optional()
+});
+
 export const outcomeSignalsSchema = z.object({
   reply: z.boolean().optional(),
   interview: z.boolean().optional(),
@@ -122,7 +146,8 @@ export const candidateProfileMetadataSchema = z.object({
   seniority: z.string().trim().min(1).optional(),
   availability: z.string().trim().min(1).optional(),
   location: z.string().trim().min(1).optional(),
-  notes: z.string().trim().min(1).optional()
+  notes: z.string().trim().min(1).optional(),
+  externalProfiles: candidateExternalProfilesSchema.default({})
 });
 
 export const candidateProfileInputSchema = z.object({
@@ -175,7 +200,13 @@ export const historicalCaseInputSchema = z.object({
 
 export const generationJobInputSchema = z.object({
   title: z.string().trim().optional(),
-  description: z.string().trim().min(30)
+  description: z.string().trim().min(30),
+  proposalQuestions: z.array(proposalQuestionSchema).default([])
+});
+
+export const questionAnsweringOutputSchema = z.object({
+  answers: z.array(proposalQuestionAnswerSchema),
+  unresolved: z.array(unresolvedProposalQuestionSchema)
 });
 
 export const fragmentRecordSchema = z.object({
@@ -189,7 +220,11 @@ export const fragmentRecordSchema = z.object({
 
 export type EvidenceType = z.infer<typeof evidenceTypeSchema>;
 export type FragmentType = z.infer<typeof fragmentTypeSchema>;
+export type ProposalLengthBucket = z.infer<typeof proposalLengthBucketSchema>;
 export type ToneProfile = z.infer<typeof toneProfileSchema>;
+export type ProposalQuestion = z.infer<typeof proposalQuestionSchema>;
+export type ProposalQuestionAnswer = z.infer<typeof proposalQuestionAnswerSchema>;
+export type UnresolvedProposalQuestion = z.infer<typeof unresolvedProposalQuestionSchema>;
 export type JobExtract = z.infer<typeof jobExtractSchema>;
 export type ProposalExtract = z.infer<typeof proposalExtractSchema>;
 export type QualityRubric = z.infer<typeof qualityRubricSchema>;
@@ -199,6 +234,7 @@ export type EvidenceSelectionOutput = z.infer<typeof evidenceSelectionOutputSche
 export type ProposalPlan = z.infer<typeof proposalPlanSchema>;
 export type CopyRisk = z.infer<typeof copyRiskSchema>;
 export type DraftCritique = z.infer<typeof draftCritiqueSchema>;
+export type CandidateExternalProfiles = z.infer<typeof candidateExternalProfilesSchema>;
 export type OutcomeSignals = z.infer<typeof outcomeSignalsSchema>;
 export type CandidateProfileInput = z.infer<typeof candidateProfileInputSchema>;
 export type CandidateEvidenceInput = z.infer<typeof candidateEvidenceInputSchema>;
@@ -207,4 +243,5 @@ export type CandidateEvidenceExtractionBlock = z.infer<typeof candidateEvidenceE
 export type CandidateEvidenceExtraction = z.infer<typeof candidateEvidenceExtractionSchema>;
 export type HistoricalCaseInput = z.infer<typeof historicalCaseInputSchema>;
 export type GenerationJobInput = z.infer<typeof generationJobInputSchema>;
+export type QuestionAnsweringOutput = z.infer<typeof questionAnsweringOutputSchema>;
 export type FragmentRecord = z.infer<typeof fragmentRecordSchema>;

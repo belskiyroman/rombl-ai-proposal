@@ -11,6 +11,7 @@ describe("generation handoffs", () => {
       pageTitle: "Senior Backend Engineer - Upwork",
       jobTitle: "Senior Backend Engineer",
       jobDescription: "Need a senior backend engineer to own MongoDB performance, Node.js APIs, and production support.",
+      proposalQuestions: [],
       capturedAt: 1000,
       createdAt: 2000
     });
@@ -63,6 +64,28 @@ describe("generation handoffs", () => {
     expect(resolved.status).toBe("available");
     if (resolved.status === "available") {
       expect(resolved.handoff._id).toBe("handoff_1");
+    }
+  });
+
+  it("normalizes missing proposal questions on legacy handoff records", () => {
+    const resolved = resolveGenerationHandoffRecord(
+      {
+        _id: "handoff_legacy",
+        sourceSite: "upwork",
+        sourceUrl: "https://www.upwork.com/jobs/~01",
+        pageTitle: "Title",
+        jobTitle: "Title",
+        jobDescription: "A sufficiently detailed job description for the handoff flow to accept.",
+        capturedAt: 1000,
+        createdAt: 2000,
+        expiresAt: 5000
+      } as any,
+      3000
+    );
+
+    expect(resolved.status).toBe("available");
+    if (resolved.status === "available") {
+      expect(resolved.handoff.proposalQuestions).toEqual([]);
     }
   });
 });

@@ -46,6 +46,10 @@ export function buildJobPreviewMeta(job: ExtensionCapturedJob): string {
   if (job.parserMeta.skillsCount > 0) {
     parts.push(`${job.parserMeta.skillsCount} skills`);
   }
+  const proposalQuestionCount = job.proposalQuestions?.length ?? 0;
+  if (proposalQuestionCount > 0) {
+    parts.push(`${proposalQuestionCount} questions`);
+  }
 
   return parts.join(" • ");
 }
@@ -66,6 +70,7 @@ export function validateOutgoingHandoff(job: ExtensionCapturedJob) {
     pageTitle: job.pageTitle,
     jobTitle: job.jobTitle,
     jobDescription: job.jobDescription,
+    proposalQuestions: job.proposalQuestions,
     capturedAt: job.capturedAt
   });
 }
@@ -82,6 +87,7 @@ export function validateExtensionGenerateRequest(payload: {
   candidateId: number;
   title?: string;
   description: string;
+  proposalQuestions: Array<{ position: number; prompt: string }>;
   sourceSite: "upwork";
   sourceUrl: string;
 }) {

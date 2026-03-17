@@ -102,6 +102,12 @@ const SAMPLE_PROPOSAL_PAGE_HTML = `
             </div>
         </section>
     </div>
+    <div class="questions-area">
+        <div class="form-group">
+            <label class="label">Include a link to your GitHub profile and/or website</label>
+            <textarea></textarea>
+        </div>
+    </div>
 </body>
 </html>
 `;
@@ -143,6 +149,18 @@ describe("parseUpworkJobHtml", () => {
     it("returns empty string for empty HTML", () => {
       const result = parseUpworkJobHtml(EMPTY_HTML);
       expect(result.text).toBe("");
+    });
+  });
+
+  describe("proposal question extraction", () => {
+    it("extracts ordered proposal questions from Submit Proposal pages", () => {
+      const result = parseUpworkJobHtml(SAMPLE_PROPOSAL_PAGE_HTML);
+      expect(result.proposalQuestions).toEqual([
+        {
+          position: 1,
+          prompt: "Include a link to your GitHub profile and/or website"
+        }
+      ]);
     });
   });
 
