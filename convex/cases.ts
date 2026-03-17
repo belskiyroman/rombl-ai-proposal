@@ -470,7 +470,18 @@ export const deleteCaseEvidenceBlocksByCaseId = internalMutationGeneric({
   }
 });
 
-type CasesActionCtx = ActionCtx;
+export type HistoricalCaseIngestContext = {
+  runQuery: (...args: any[]) => Promise<any>;
+  runMutation: (...args: any[]) => Promise<any>;
+};
+
+export interface HistoricalCaseIngestArgs extends HistoricalCaseInput {
+  embeddingModel?: string;
+  fastModel?: string;
+  reasoningModel?: string;
+}
+
+type CasesActionCtx = HistoricalCaseIngestContext;
 
 async function reconcileProposalCluster(
   ctx: CasesActionCtx,
@@ -704,13 +715,9 @@ async function deleteHistoricalCaseCore(
   };
 }
 
-async function ingestHistoricalCaseCore(
-  ctx: CasesActionCtx,
-  args: HistoricalCaseInput & {
-    embeddingModel?: string;
-    fastModel?: string;
-    reasoningModel?: string;
-  }
+export async function ingestHistoricalCaseArtifacts(
+  ctx: HistoricalCaseIngestContext,
+  args: HistoricalCaseIngestArgs
 ) {
   const createdAt = Date.now();
   const runners = createProposalEngineRunners({
@@ -975,7 +982,7 @@ export const ingestHistoricalCase = actionGeneric({
       throw new Error(`Candidate profile ${parsed.candidateId} not found. Create it before ingesting historical cases.`);
     }
 
-    return ingestHistoricalCaseCore(ctx, {
+    return ingestHistoricalCaseArtifacts(ctx, {
       ...parsed,
       embeddingModel: args.embeddingModel,
       fastModel: args.fastModel,
@@ -1014,7 +1021,7 @@ export const updateHistoricalCase = actionGeneric({
       throw new Error("Historical case not found.");
     }
 
-    const result = await ingestHistoricalCaseCore(ctx, {
+    const result = await ingestHistoricalCaseArtifacts(ctx, {
       candidateId: existing.candidateId,
       jobTitle: args.jobTitle,
       jobDescription: args.jobDescription,

@@ -161,6 +161,8 @@ Each historical case is processed as:
 9. generate embeddings
 10. persist all artifacts
 
+Successful proposal generations are also auto-added into this same pipeline as best-effort historical cases using the delivered cover letter plus any answered proposal-question Q&A. Auto-add failures must not fail generation.
+
 ### Deduplication
 
 - exact duplicates collapse into the same cluster
@@ -207,6 +209,7 @@ The extension-native path is asynchronous:
 ### Behavior
 
 - writes immutable saved snapshots into `generation_runs`
+- best-effort auto-adds each successful generated job/proposal pair into the historical-case Library pipeline on `/pairs`
 - returns the generated proposal plus the saved run id for history/detail screens
 - uses the structured proposal engine in `src/lib/proposal-engine`
 
@@ -400,6 +403,7 @@ Used for:
 
 - `/pairs`
   - canonical case library
+  - includes best-effort auto-added generated job/proposal pairs after successful generation
   - create, inspect, edit, delete, and promote historical cases
   - review duplicate clusters
 

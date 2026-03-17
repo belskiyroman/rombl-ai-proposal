@@ -5,9 +5,10 @@ import { generateEmbeddingWithTelemetry } from "../src/lib/ai/embeddings";
 import type { GenerationTelemetrySummary, GenerationStepTelemetry } from "../src/lib/ai/telemetry";
 import { createProposalEngineRunners } from "../src/lib/proposal-engine/agents";
 import { getProposalEngineStepLabel, type ProposalEngineProgressEvent } from "../src/lib/proposal-engine/progress";
-import { generationJobInputSchema, type GenerationJobInput } from "../src/lib/proposal-engine/schemas";
+import { generationJobInputSchema, historicalCaseInputSchema, type GenerationJobInput } from "../src/lib/proposal-engine/schemas";
 import { runCreateProposal, runRetrieveProposalContext, type CreateProposalResult } from "../src/lib/proposal-engine/service";
 import { internal } from "./_generated/api";
+import { ingestHistoricalCaseArtifacts, type HistoricalCaseIngestContext } from "./cases";
 
 const generationJobInputValidator = v.object({
   title: v.optional(v.string()),
@@ -396,6 +397,79 @@ function normalizeGenerationJobInput(jobInput: GenerationJobInput): GenerationJo
   };
 }
 
+export function buildGeneratedProposalLibraryText(
+  result: Pick<CreateProposalResult, "finalProposal" | "questionAnswers">
+) {
+  const coverLetter = result.finalProposal.trim();
+  const answeredQuestions = [...result.questionAnswers].sort((left, right) => left.position - right.position);
+
+  if (answeredQuestions.length === 0) {
+    return coverLetter;
+  }
+
+  const questionAnswerSection = answeredQuestions
+    .map((item, index) => `Q${index + 1}: ${item.prompt}\nA${index + 1}: ${item.answer}`)
+    .join("\n\n");
+
+  return `${coverLetter}\n\nProposal Questions & Answers\n\n${questionAnswerSection}`;
+}
+
+export function buildGeneratedHistoricalCaseInput(args: {
+  candidateId: number;
+  jobInput: GenerationJobInput;
+  result: Pick<CreateProposalResult, "finalProposal" | "questionAnswers" | "jobUnderstanding">;
+}) {
+  return historicalCaseInputSchema.parse({
+    candidateId: args.candidateId,
+    jobTitle: args.jobInput.title?.trim() || args.result.jobUnderstanding.jobSummary,
+    jobDescription: args.jobInput.description,
+    proposalText: buildGeneratedProposalLibraryText(args.result),
+    outcome: {}
+  });
+}
+
+export async function bestEffortAutoAddGeneratedPairToLibrary(
+  ctx: HistoricalCaseIngestContext,
+  args: {
+    candidateId: number;
+    jobInput: GenerationJobInput;
+    result: CreateProposalResult;
+    embeddingModel?: string;
+    fastModel?: string;
+    reasoningModel?: string;
+  }
+) {
+  try {
+    const libraryCaseInput = buildGeneratedHistoricalCaseInput({
+      candidateId: args.candidateId,
+      jobInput: args.jobInput,
+      result: args.result
+    });
+
+    const ingestionResult = await ingestHistoricalCaseArtifacts(ctx, {
+      ...libraryCaseInput,
+      embeddingModel: args.embeddingModel,
+      fastModel: args.fastModel,
+      reasoningModel: args.reasoningModel
+    });
+
+    return {
+      status: "INGESTED" as const,
+      historicalCaseId: ingestionResult.historicalCaseId
+    };
+  } catch (error) {
+    console.error("Failed to auto-add generated pair to the Library.", {
+      candidateId: args.candidateId,
+      jobTitle: args.jobInput.title?.trim() || args.result.jobUnderstanding.jobSummary,
+      error: error instanceof Error ? error.message : "Unknown library auto-add error"
+    });
+
+    return {
+      status: "FAILED" as const
+    };
+  }
+}
+
 function buildGenerationProgressDocument(args: {
   candidateId: number;
   jobInput: GenerationJobInput;
@@ -615,6 +689,15 @@ async function executeProposalGeneration(
         document: generationDocument
       }
     );
+
+    await bestEffortAutoAddGeneratedPairToLibrary(ctx, {
+      candidateId: args.candidateId,
+      jobInput: parsedJobInput,
+      result,
+      embeddingModel: args.embeddingModel,
+      fastModel: args.fastModel,
+      reasoningModel: args.reasoningModel
+    });
 
     if (args.progressId !== undefined) {
       await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<true | null>)(
