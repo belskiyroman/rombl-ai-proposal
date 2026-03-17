@@ -9,6 +9,10 @@ export function buildGenerationHandoffDocument(args: {
   pageTitle: string;
   jobTitle: string;
   jobDescription: string;
+  proposalQuestions: Array<{
+    position: number;
+    prompt: string;
+  }>;
   capturedAt: number;
   createdAt: number;
 }) {
@@ -18,6 +22,7 @@ export function buildGenerationHandoffDocument(args: {
     pageTitle: args.pageTitle,
     jobTitle: args.jobTitle,
     jobDescription: args.jobDescription,
+    proposalQuestions: args.proposalQuestions,
     capturedAt: args.capturedAt,
     createdAt: args.createdAt,
     expiresAt: args.createdAt + generationHandoffTtlMs
@@ -42,7 +47,10 @@ export function resolveGenerationHandoffRecord(
 
   return {
     status: "available",
-    handoff: record
+    handoff: {
+      ...record,
+      proposalQuestions: record.proposalQuestions ?? []
+    }
   };
 }
 
@@ -53,6 +61,12 @@ export const createGenerationHandoff = mutationGeneric({
     pageTitle: v.string(),
     jobTitle: v.string(),
     jobDescription: v.string(),
+    proposalQuestions: v.array(
+      v.object({
+        position: v.float64(),
+        prompt: v.string()
+      })
+    ),
     capturedAt: v.float64()
   },
   handler: async (ctx, args) => {
@@ -84,7 +98,8 @@ export const getGenerationHandoff = queryGeneric({
       record
         ? ({
             _id: String(record._id),
-            ...record
+            ...record,
+            proposalQuestions: record.proposalQuestions ?? []
           } satisfies StoredGenerationHandoff)
         : null,
       Date.now()

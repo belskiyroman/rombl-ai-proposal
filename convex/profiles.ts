@@ -39,7 +39,14 @@ const candidateProfileDocumentValidator = v.object({
     seniority: v.optional(v.string()),
     availability: v.optional(v.string()),
     location: v.optional(v.string()),
-    notes: v.optional(v.string())
+    notes: v.optional(v.string()),
+    externalProfiles: v.optional(
+      v.object({
+        githubUrl: v.optional(v.string()),
+        websiteUrl: v.optional(v.string()),
+        portfolioUrl: v.optional(v.string())
+      })
+    )
   }),
   createdAt: v.float64(),
   updatedAt: v.float64()
@@ -158,6 +165,7 @@ export const getCandidateProfileSummary = queryGeneric({
       toneProfile: latestProfile.toneProfile,
       coreDomains: latestProfile.coreDomains,
       preferredCtaStyle: latestProfile.preferredCtaStyle,
+      externalProfiles: latestProfile.metadata.externalProfiles ?? {},
       metadata: latestProfile.metadata,
       activeEvidenceCount: evidenceBlocks.filter((block) => block.active).length,
       evidencePreview: evidenceBlocks.slice(0, 4).map((block) => ({
@@ -362,6 +370,78 @@ export const deleteCandidateRecordTree = internalMutationGeneric({
 
 type PersistableCandidateEvidenceBlock = CandidateEvidenceInputBlock | CandidateEvidenceExtractionBlock;
 
+type CandidateProfileMetadata = CandidateProfileInput["metadata"];
+
+async function extractCandidateProfileEvidenceBlocks(args: {
+  runners: ReturnType<typeof createProposalEngineRunners>;
+  displayName: string;
+  knownDomains: string[];
+  positioningSummary: string;
+  rawEvidenceText?: string;
+}) {
+  const candidateSummaries = [args.positioningSummary, args.rawEvidenceText?.trim()]
+    .map((value) => value?.trim())
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  const extracted = await Promise.all(
+    candidateSummaries.map((candidateSummary) =>
+      args.runners.extractCandidateEvidence.invoke(
+        buildCandidateEvidencePrompt({
+          candidateSummary,
+          displayName: args.displayName,
+          knownDomains: args.knownDomains
+        })
+      )
+    )
+  );
+
+  return extracted.flatMap((result) => result.blocks);
+}
+
+async function persistCandidateProfileWithEvidence(args: {
+  ctx: {
+    runMutation: (mutationRef: unknown, mutationArgs: unknown) => Promise<unknown>;
+  };
+  parsedProfile: CandidateProfileInput;
+  evidenceBlocks: PersistableCandidateEvidenceBlock[];
+  createdAt: number;
+  embeddingModel?: string;
+}) {
+  const [profileId, evidenceDocuments] = await Promise.all([
+    args.ctx.runMutation(
+      internal.profiles.upsertCandidateProfileRecord,
+      {
+        document: {
+          ...args.parsedProfile,
+          createdAt: args.createdAt,
+          updatedAt: args.createdAt
+        }
+      }
+    ) as Promise<string>,
+    buildCandidateEvidenceDocuments({
+      candidateId: args.parsedProfile.candidateId,
+      blocks: args.evidenceBlocks,
+      source: "candidate_profile",
+      createdAt: args.createdAt,
+      embeddingModel: args.embeddingModel
+    })
+  ]);
+
+  await (args.ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<string[]>)(
+    internal.profiles.replaceCandidateProfileEvidenceBlocks,
+    {
+      candidateId: args.parsedProfile.candidateId,
+      documents: evidenceDocuments
+    }
+  );
+
+  return {
+    profileId: String(profileId),
+    candidateId: args.parsedProfile.candidateId,
+    evidenceCount: evidenceDocuments.length
+  };
+}
+
 function normalizeOptionalEvidenceString(value: string | null | undefined): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -454,7 +534,14 @@ export const upsertCandidateProfile = actionGeneric({
         seniority: v.optional(v.string()),
         availability: v.optional(v.string()),
         location: v.optional(v.string()),
-        notes: v.optional(v.string())
+        notes: v.optional(v.string()),
+        externalProfiles: v.optional(
+          v.object({
+            githubUrl: v.optional(v.string()),
+            websiteUrl: v.optional(v.string()),
+            portfolioUrl: v.optional(v.string())
+          })
+        )
       })
     ),
     embeddingModel: v.optional(v.string()),
@@ -469,7 +556,10 @@ export const upsertCandidateProfile = actionGeneric({
       toneProfile: args.toneProfile,
       coreDomains: args.coreDomains,
       preferredCtaStyle: args.preferredCtaStyle,
-      metadata: args.metadata ?? {}
+      metadata: {
+        ...(args.metadata ?? {}),
+        externalProfiles: args.metadata?.externalProfiles ?? {}
+      }
     } satisfies CandidateProfileInput);
 
     const createdAt = Date.now();
@@ -478,48 +568,96 @@ export const upsertCandidateProfile = actionGeneric({
       reasoningModel: args.reasoningModel
     });
 
-    const extractedEvidence = await runners.extractCandidateEvidence.invoke(
-      buildCandidateEvidencePrompt({
-        candidateSummary: parsed.positioningSummary,
-        displayName: parsed.displayName,
-        knownDomains: parsed.coreDomains
-      })
-    );
+    const extractedEvidence = await extractCandidateProfileEvidenceBlocks({
+      runners,
+      displayName: parsed.displayName,
+      knownDomains: parsed.coreDomains,
+      positioningSummary: parsed.positioningSummary
+    });
 
-    const [profileId, evidenceDocuments]: [string, Awaited<ReturnType<typeof buildCandidateEvidenceDocuments>>] =
-      await Promise.all([
-      (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<string>)(
-        internal.profiles.upsertCandidateProfileRecord,
-        {
-          document: {
-            ...parsed,
-            createdAt,
-            updatedAt: createdAt
-          }
-        }
-      ),
-      buildCandidateEvidenceDocuments({
-        candidateId: parsed.candidateId,
-        blocks: extractedEvidence.blocks,
-        source: "candidate_profile",
-        createdAt,
-        embeddingModel: args.embeddingModel
-      })
-      ]);
+    return persistCandidateProfileWithEvidence({
+      ctx: {
+        runMutation: ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<unknown>
+      },
+      parsedProfile: parsed,
+      evidenceBlocks: extractedEvidence,
+      createdAt,
+      embeddingModel: args.embeddingModel
+    });
+  }
+});
 
-    await (ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<string[]>)(
-      internal.profiles.replaceCandidateProfileEvidenceBlocks,
-      {
-        candidateId: parsed.candidateId,
-        documents: evidenceDocuments
+export const seedCandidateProfile = actionGeneric({
+  args: {
+    candidateId: v.float64(),
+    displayName: v.string(),
+    positioningSummary: v.string(),
+    toneProfile: toneProfileValidator,
+    coreDomains: v.array(v.string()),
+    preferredCtaStyle: v.string(),
+    metadata: v.optional(
+      v.object({
+        seniority: v.optional(v.string()),
+        availability: v.optional(v.string()),
+        location: v.optional(v.string()),
+        notes: v.optional(v.string()),
+        externalProfiles: v.optional(
+          v.object({
+            githubUrl: v.optional(v.string()),
+            websiteUrl: v.optional(v.string()),
+            portfolioUrl: v.optional(v.string())
+          })
+        )
+      })
+    ),
+    rawEvidenceText: v.optional(v.string()),
+    embeddingModel: v.optional(v.string()),
+    fastModel: v.optional(v.string()),
+    reasoningModel: v.optional(v.string())
+  },
+  handler: async (ctx, args): Promise<{ profileId: string; candidateId: number; evidenceCount: number }> => {
+    const parsedProfile = candidateProfileInputSchema.parse({
+      candidateId: args.candidateId,
+      displayName: args.displayName,
+      positioningSummary: args.positioningSummary,
+      toneProfile: args.toneProfile,
+      coreDomains: args.coreDomains,
+      preferredCtaStyle: args.preferredCtaStyle,
+      metadata: {
+        ...(args.metadata ?? {}),
+        externalProfiles: args.metadata?.externalProfiles ?? {}
       }
-    );
+    } satisfies CandidateProfileInput);
 
-    return {
-      profileId: String(profileId),
-      candidateId: parsed.candidateId,
-      evidenceCount: evidenceDocuments.length
-    };
+    const parsedEvidence = candidateEvidenceInputSchema.parse({
+      candidateId: args.candidateId,
+      rawEvidenceText: args.rawEvidenceText,
+      blocks: []
+    });
+
+    const createdAt = Date.now();
+    const runners = createProposalEngineRunners({
+      fastModel: args.fastModel,
+      reasoningModel: args.reasoningModel
+    });
+
+    const extractedEvidence = await extractCandidateProfileEvidenceBlocks({
+      runners,
+      displayName: parsedProfile.displayName,
+      knownDomains: parsedProfile.coreDomains,
+      positioningSummary: parsedProfile.positioningSummary,
+      rawEvidenceText: parsedEvidence.rawEvidenceText
+    });
+
+    return persistCandidateProfileWithEvidence({
+      ctx: {
+        runMutation: ctx.runMutation as (mutationRef: unknown, mutationArgs: unknown) => Promise<unknown>
+      },
+      parsedProfile,
+      evidenceBlocks: extractedEvidence,
+      createdAt,
+      embeddingModel: args.embeddingModel
+    });
   }
 });
 

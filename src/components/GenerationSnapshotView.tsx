@@ -130,10 +130,9 @@ export function GenerationSnapshotView({
             </div>
             <p className="text-xs text-muted-foreground">
               {snapshot
-                ? `Trace: ${snapshot.executionTrace.length > 0
-                  ? snapshot.executionTrace.join(" -> ")
-                  : "Unavailable for this run"
-                } • ${snapshot.telemetrySummary.totalTokens} tokens • ${formatDuration(snapshot.telemetrySummary.totalDurationMs)}`
+                ? `Cover letter: ${snapshot.coverLetterCharCount} / 5000 chars • Trace: ${
+                    snapshot.executionTrace.length > 0 ? snapshot.executionTrace.join(" -> ") : "Unavailable for this run"
+                  } • ${snapshot.telemetrySummary.totalTokens} tokens • ${formatDuration(snapshot.telemetrySummary.totalDurationMs)}`
                 : "Run generation to see the full trace."}
             </p>
           </div>
@@ -142,6 +141,39 @@ export function GenerationSnapshotView({
 
       {snapshot ? (
         <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Proposal Questions</CardTitle>
+              <CardDescription>Generated answers are separated from the cover letter and stay grounded.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {snapshot.jobInput.proposalQuestions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">This submission did not include proposal questions.</p>
+              ) : (
+                snapshot.jobInput.proposalQuestions.map((question) => {
+                  const answer = snapshot.questionAnswers.find((item) => item.position === question.position);
+                  const unresolved = snapshot.unresolvedQuestions.find((item) => item.position === question.position);
+
+                  return (
+                    <div
+                      key={`question-${question.position}`}
+                      className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4"
+                    >
+                      <p className="text-sm font-medium">{question.prompt}</p>
+                      {answer ? (
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{answer.answer}</p>
+                      ) : unresolved ? (
+                        <p className="mt-2 text-sm text-amber-300">Manual answer required: {unresolved.reason}</p>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">No saved answer for this question.</p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Job Understanding</CardTitle>

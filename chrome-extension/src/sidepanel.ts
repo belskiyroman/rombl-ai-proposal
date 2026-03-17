@@ -10,7 +10,12 @@ import {
   validateExtensionGenerateRequest
 } from "./shared/helpers";
 import { clearStoredPanelState, getStoredAppBaseUrl, getStoredPanelState, setStoredPanelState } from "./shared/storage";
-import type { ContentExtractionResponse, ExtensionCapturedJob, ExtensionPanelState } from "./shared/types";
+import type {
+  ContentExtractionResponse,
+  ContentFillSubmissionResponse,
+  ExtensionCapturedJob,
+  ExtensionPanelState
+} from "./shared/types";
 import { isUpworkJobUrl } from "../../src/lib/job-import/upwork";
 
 type CandidateSummary = ReturnType<typeof parseExtensionCandidatesResponse>["candidates"][number];
@@ -32,6 +37,9 @@ const sourceMeta = queryRequired<HTMLParagraphElement>("#sourceMeta");
 const candidateSelect = queryRequired<HTMLSelectElement>("#candidateSelect");
 const jobTitleInput = queryRequired<HTMLInputElement>("#jobTitle");
 const jobDescriptionInput = queryRequired<HTMLTextAreaElement>("#jobDescription");
+const proposalQuestionsSection = queryRequired<HTMLElement>("#proposalQuestionsSection");
+const proposalQuestionsCount = queryRequired<HTMLSpanElement>("#proposalQuestionsCount");
+const proposalQuestionsEditor = queryRequired<HTMLElement>("#proposalQuestionsEditor");
 const generateButton = queryRequired<HTMLButtonElement>("#generateButton");
 const refreshCaptureButton = queryRequired<HTMLButtonElement>("#refreshCaptureButton");
 const progressCard = queryRequired<HTMLElement>("#progressCard");
@@ -40,6 +48,11 @@ const progressSteps = queryRequired<HTMLUListElement>("#progressSteps");
 const resultCard = queryRequired<HTMLElement>("#resultCard");
 const resultBadge = queryRequired<HTMLSpanElement>("#resultBadge");
 const proposalOutput = queryRequired<HTMLElement>("#proposalOutput");
+const questionAnswersSection = queryRequired<HTMLElement>("#questionAnswersSection");
+const questionAnswersOutput = queryRequired<HTMLElement>("#questionAnswersOutput");
+const unresolvedQuestionsSection = queryRequired<HTMLElement>("#unresolvedQuestionsSection");
+const unresolvedQuestionsOutput = queryRequired<HTMLUListElement>("#unresolvedQuestionsOutput");
+const fillCoverLetterButton = queryRequired<HTMLButtonElement>("#fillCoverLetterButton");
 const copyProposalButton = queryRequired<HTMLButtonElement>("#copyProposalButton");
 const openRunButton = queryRequired<HTMLButtonElement>("#openRunButton");
 const openOptionsButton = queryRequired<HTMLButtonElement>("#openOptionsButton");
@@ -79,6 +92,24 @@ jobDescriptionInput.addEventListener("input", () => {
   });
 });
 
+proposalQuestionsEditor.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  const position = Number(target.dataset.position);
+  if (!Number.isFinite(position) || position <= 0 || !panelState?.capturedJob) {
+    return;
+  }
+
+  updateCapturedJob({
+    proposalQuestions: panelState.capturedJob.proposalQuestions.map((question) =>
+      question.position === position ? { ...question, prompt: target.value } : question
+    )
+  });
+});
+
 generateButton.addEventListener("click", () => {
   void startGeneration();
 });
@@ -89,6 +120,10 @@ refreshCaptureButton.addEventListener("click", () => {
 
 copyProposalButton.addEventListener("click", () => {
   void copyProposal();
+});
+
+fillCoverLetterButton.addEventListener("click", () => {
+  void autofillSubmission();
 });
 
 openRunButton.addEventListener("click", () => {
@@ -152,6 +187,7 @@ function buildEmptyPanelState(tabId: number): ExtensionPanelState {
     capturedJob: null,
     selectedCandidateId: null,
     activeProgressId: null,
+    autofillStatus: null,
     latestStatus: null,
     finalResult: null,
     errorMessage: null
@@ -200,6 +236,7 @@ async function captureActiveTab(tabId: number) {
     capturedJob: response.payload,
     selectedCandidateId: null,
     activeProgressId: null,
+    autofillStatus: null,
     latestStatus: null,
     finalResult: null,
     errorMessage: null
@@ -219,7 +256,9 @@ async function refreshCapture() {
   await captureActiveTab(activeTabId);
 }
 
-function updateCapturedJob(patch: Partial<Pick<ExtensionCapturedJob, "jobTitle" | "jobDescription">>) {
+function updateCapturedJob(
+  patch: Partial<Pick<ExtensionCapturedJob, "jobTitle" | "jobDescription" | "proposalQuestions">>
+) {
   if (!panelState?.capturedJob || isGenerationRunning()) {
     return;
   }
@@ -231,6 +270,7 @@ function updateCapturedJob(patch: Partial<Pick<ExtensionCapturedJob, "jobTitle" 
       ...patch
     },
     activeProgressId: null,
+    autofillStatus: null,
     latestStatus: null,
     finalResult: null,
     errorMessage: null
@@ -275,6 +315,10 @@ async function startGeneration() {
     candidateId: panelState.selectedCandidateId,
     title: panelState.capturedJob.jobTitle,
     description: panelState.capturedJob.jobDescription,
+    proposalQuestions: panelState.capturedJob.proposalQuestions.map((question, index) => ({
+      position: index + 1,
+      prompt: question.prompt.trim()
+    })),
     sourceSite: panelState.capturedJob.sourceSite,
     sourceUrl: panelState.capturedJob.sourceUrl
   });
@@ -301,6 +345,7 @@ async function startGeneration() {
   panelState = {
     ...panelState,
     activeProgressId: parsed.progressId,
+    autofillStatus: null,
     latestStatus: {
       status: "QUEUED",
       currentStepLabel: null,
@@ -352,6 +397,7 @@ async function pollGenerationStatus() {
   }
 
   const parsed = parseExtensionGenerateStatusResponse(json);
+  const nextFinalResult = parsed.result ?? panelState.finalResult;
   panelState = {
     ...panelState,
     latestStatus: parsed.progress
@@ -369,13 +415,13 @@ async function pollGenerationStatus() {
           }))
         }
       : panelState.latestStatus,
-    finalResult: parsed.result ?? panelState.finalResult,
+    finalResult: nextFinalResult,
     errorMessage: parsed.progress?.status === "FAILED" ? parsed.progress.errorMessage ?? "Generation failed." : null
   };
 
   if (parsed.result) {
     panelState.activeProgressId = null;
-    await persistAndRender();
+    await autofillSubmission(parsed.result);
     return;
   }
 
@@ -408,6 +454,55 @@ async function openRunInApp() {
   });
 }
 
+async function autofillSubmission(
+  submission: ExtensionPanelState["finalResult"] | null = panelState?.finalResult ?? null
+) {
+  const currentState = panelState;
+  if (!currentState || !submission || activeTabId == null || !submission.finalProposal) {
+    return;
+  }
+
+  let response: ContentFillSubmissionResponse;
+  try {
+    response = await chrome.tabs.sendMessage(activeTabId, {
+      type: "fill-generated-submission",
+      payload: {
+        coverLetter: submission.finalProposal,
+        questionAnswers: submission.questionAnswers,
+        unresolvedQuestions: submission.unresolvedQuestions
+      }
+    });
+  } catch {
+    panelState = {
+      ...currentState,
+      autofillStatus: {
+        status: "FAILED",
+        message: "Reload the Upwork Submit Proposal page once so the submission fields can be filled."
+      }
+    };
+    await persistAndRender();
+    return;
+  }
+
+  panelState = {
+    ...currentState,
+    autofillStatus:
+      response.status === "success"
+        ? {
+            status: "SUCCESS",
+            message:
+              submission.unresolvedQuestions.length > 0
+                ? `Cover letter and available question answers filled. ${submission.unresolvedQuestions.length} question(s) still need manual input.`
+                : "Cover letter and proposal question answers filled on the current Upwork proposal page."
+          }
+        : {
+            status: "FAILED",
+            message: response.message
+          }
+  };
+  await persistAndRender();
+}
+
 async function persistAndRender() {
   if (panelState) {
     await setStoredPanelState(panelState.tabId, panelState);
@@ -435,6 +530,29 @@ function render() {
 
   jobTitleInput.value = capturedJob?.jobTitle ?? "";
   jobDescriptionInput.value = capturedJob?.jobDescription ?? "";
+  proposalQuestionsSection.classList.toggle("is-hidden", !capturedJob || capturedJob.proposalQuestions.length === 0);
+  proposalQuestionsCount.textContent = capturedJob ? `${capturedJob.proposalQuestions.length} total` : "";
+  proposalQuestionsEditor.innerHTML = "";
+  if (capturedJob) {
+    for (const question of capturedJob.proposalQuestions) {
+      const wrapper = document.createElement("label");
+      wrapper.className = "field-stack";
+
+      const label = document.createElement("span");
+      label.className = "field-label";
+      label.textContent = `Question ${question.position}`;
+
+      const textarea = document.createElement("textarea");
+      textarea.className = "text-area";
+      textarea.rows = 3;
+      textarea.value = question.prompt;
+      textarea.dataset.position = String(question.position);
+      textarea.disabled = isRunning;
+
+      wrapper.append(label, textarea);
+      proposalQuestionsEditor.append(wrapper);
+    }
+  }
 
   candidateSelect.innerHTML = '<option value="">Select candidate</option>';
   for (const candidate of candidates) {
@@ -479,12 +597,40 @@ function render() {
     resultBadge.textContent = finalResult.approvalStatus;
     resultBadge.className = `result-badge result-badge-${finalResult.approvalStatus.toLowerCase()}`;
     proposalOutput.textContent = finalResult.finalProposal;
+    questionAnswersSection.classList.toggle("is-hidden", finalResult.questionAnswers.length === 0);
+    questionAnswersOutput.innerHTML = "";
+    for (const answer of finalResult.questionAnswers) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "status-card";
+      const prompt = document.createElement("p");
+      prompt.className = "preview-meta";
+      prompt.textContent = `Question ${answer.position}: ${answer.prompt}`;
+      const body = document.createElement("pre");
+      body.className = "proposal-output";
+      body.textContent = answer.answer;
+      wrapper.append(prompt, body);
+      questionAnswersOutput.append(wrapper);
+    }
+
+    unresolvedQuestionsSection.classList.toggle("is-hidden", finalResult.unresolvedQuestions.length === 0);
+    unresolvedQuestionsOutput.innerHTML = "";
+    for (const unresolved of finalResult.unresolvedQuestions) {
+      const item = document.createElement("li");
+      item.className = "progress-item progress-item-failed";
+      item.textContent = `${unresolved.prompt} · ${unresolved.reason}`;
+      unresolvedQuestionsOutput.append(item);
+    }
   } else {
     resultBadge.textContent = "";
     proposalOutput.textContent = "";
+    questionAnswersSection.classList.add("is-hidden");
+    questionAnswersOutput.innerHTML = "";
+    unresolvedQuestionsSection.classList.add("is-hidden");
+    unresolvedQuestionsOutput.innerHTML = "";
   }
 
   openRunButton.disabled = finalResult == null || !appBaseUrl;
+  fillCoverLetterButton.disabled = isRunning || finalResult == null || activeTabId == null;
   copyProposalButton.disabled = finalResult == null;
 }
 
@@ -502,7 +648,17 @@ function buildTopLevelStatus(): string {
   }
 
   if (panelState.finalResult) {
-    return "Proposal is ready. You can copy it or open the saved run in the app.";
+    if (panelState.autofillStatus?.status === "SUCCESS") {
+      return `${panelState.autofillStatus.message} You can copy it or open the saved run in the app.`;
+    }
+
+    if (panelState.autofillStatus?.status === "FAILED") {
+      return `${panelState.autofillStatus.message} You can retry filling, copy it, or open the saved run in the app.`;
+    }
+
+    return panelState.finalResult.unresolvedQuestions.length > 0
+      ? "Proposal is ready. Fill the submission, then complete the flagged manual questions before sending."
+      : "Proposal is ready. You can fill the submission, copy it, or open the saved run in the app.";
   }
 
   if (panelState.latestStatus) {

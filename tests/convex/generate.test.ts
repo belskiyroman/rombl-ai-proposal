@@ -12,11 +12,26 @@ describe("buildGenerationRunDocument", () => {
       candidateId: 7,
       jobInput: {
         title: "Senior Next.js Engineer",
-        description: "Need someone to own the architecture and ship the MVP."
+        description: "Need someone to own the architecture and ship the MVP.",
+        proposalQuestions: [
+          {
+            position: 1,
+            prompt: "Include a link to your GitHub profile and/or website"
+          }
+        ]
       },
       createdAt: 123456789,
       result: {
         finalProposal: "Final grounded proposal",
+        coverLetterCharCount: 22,
+        questionAnswers: [
+          {
+            position: 1,
+            prompt: "Include a link to your GitHub profile and/or website",
+            answer: "GitHub: https://github.com/example"
+          }
+        ],
+        unresolvedQuestions: [],
         approvalStatus: "APPROVED",
         critiqueHistory: [
           {
@@ -199,11 +214,20 @@ describe("buildGenerationRunDocument", () => {
             positioningSummary: "Senior full-stack engineer focused on MVP delivery.",
             toneProfile: "consultative",
             coreDomains: ["SaaS"],
-            preferredCtaStyle: "Short CTA"
+            preferredCtaStyle: "Short CTA",
+            externalProfiles: {
+              githubUrl: "https://github.com/example"
+            }
           },
           jobInput: {
             title: "Senior Next.js Engineer",
-            description: "Need someone to own the architecture and ship the MVP."
+            description: "Need someone to own the architecture and ship the MVP.",
+            proposalQuestions: [
+              {
+                position: 1,
+                prompt: "Include a link to your GitHub profile and/or website"
+              }
+            ]
           },
           jobUnderstanding: null,
           retrievedContext: null,
@@ -215,6 +239,8 @@ describe("buildGenerationRunDocument", () => {
           critiqueHistory: [],
           copyRisk: null,
           finalProposal: "",
+          questionAnswers: [],
+          unresolvedQuestions: [],
           revisionCount: 0,
           maxRevisions: 2,
           executionTrace: [],
@@ -234,6 +260,9 @@ describe("buildGenerationRunDocument", () => {
     expect(document.retrievedCaseIds).toHaveLength(1);
     expect(document.retrievedFragmentIds).toEqual(["fragment_1"]);
     expect(document.retrievedEvidenceIds).toEqual(["evidence_1"]);
+    expect(document.coverLetterCharCount).toBe(22);
+    expect(document.questionAnswers).toHaveLength(1);
+    expect(document.jobInput.proposalQuestions).toHaveLength(1);
   });
 
   it("keeps an async start path that schedules background generation work", () => {
@@ -242,5 +271,110 @@ describe("buildGenerationRunDocument", () => {
     expect(source).toContain("export const startProposalGeneration = mutationGeneric");
     expect(source).toContain("ctx.scheduler.runAfter(0, internal.generate.runProposalForProgress");
     expect(source).toContain("export const runProposalForProgress = internalActionGeneric");
+  });
+
+  it("keeps the delivered cover-letter length instead of any discarded oversized drafts", () => {
+    const finalProposal = "Compressed final proposal";
+    const document = buildGenerationRunDocument({
+      candidateId: 7,
+      jobInput: {
+        title: "Senior Next.js Engineer",
+        description: "Need someone to own the architecture and ship the MVP.",
+        proposalQuestions: []
+      },
+      createdAt: 123456790,
+      result: {
+        finalProposal,
+        coverLetterCharCount: finalProposal.length,
+        questionAnswers: [],
+        unresolvedQuestions: [],
+        approvalStatus: "APPROVED",
+        critiqueHistory: [],
+        executionTrace: ["write_draft", "enforce_length.compress", "critique"],
+        selectedEvidence: [],
+        retrievedContext: {
+          similarCases: [],
+          fragments: {
+            openings: [],
+            proofs: [],
+            closings: []
+          },
+          evidenceCandidates: []
+        },
+        jobUnderstanding: {
+          jobSummary: "Need an engineer to own MVP architecture and delivery.",
+          clientNeeds: ["ownership"],
+          mustHaveSkills: ["Next.js"],
+          niceToHaveSkills: [],
+          projectRiskFlags: [],
+          proposalStrategy: {
+            tone: "consultative",
+            length: "medium",
+            focus: ["ownership"]
+          }
+        },
+        proposalPlan: {
+          openingAngle: "Lead with ownership.",
+          mainPoints: ["Ownership"],
+          selectedEvidenceIds: [],
+          selectedFragmentIds: [],
+          avoid: [],
+          ctaStyle: "Short CTA"
+        },
+        draftHistory: ["x".repeat(6500), finalProposal],
+        copyRisk: {
+          triggered: false,
+          maxParagraphCosine: 0,
+          trigramOverlap: 0,
+          matchedCaseIds: [],
+          matchedFragmentIds: [],
+          reasons: []
+        },
+        stepTelemetry: [],
+        telemetrySummary: {
+          totalSteps: 0,
+          totalDurationMs: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          totalTokens: 0,
+          totalReasoningTokens: 0
+        },
+        state: {
+          candidateProfile: {
+            candidateId: 7,
+            displayName: "Roman",
+            positioningSummary: "Senior full-stack engineer focused on MVP delivery.",
+            toneProfile: "consultative",
+            coreDomains: ["SaaS"],
+            preferredCtaStyle: "Short CTA",
+            externalProfiles: {}
+          },
+          jobInput: {
+            title: "Senior Next.js Engineer",
+            description: "Need someone to own the architecture and ship the MVP.",
+            proposalQuestions: []
+          },
+          jobUnderstanding: null,
+          retrievedContext: null,
+          selectedEvidence: [],
+          proposalPlan: null,
+          currentDraft: "",
+          draftHistory: [],
+          latestCritique: null,
+          critiqueHistory: [],
+          copyRisk: null,
+          finalProposal: "",
+          questionAnswers: [],
+          unresolvedQuestions: [],
+          revisionCount: 0,
+          maxRevisions: 2,
+          executionTrace: [],
+          stepTelemetry: []
+        }
+      }
+    });
+
+    expect(document.finalProposal).toBe(finalProposal);
+    expect(document.coverLetterCharCount).toBe(finalProposal.length);
   });
 });

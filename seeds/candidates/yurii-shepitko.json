@@ -1,0 +1,26 @@
+{
+  "candidateId": 1,
+  "displayName": "Yurii Shepitko",
+  "positioningSummary": "Senior full-stack engineer with 5+ years of experience delivering production web platforms across Next.js, Node.js/NestJS, PostgreSQL, MongoDB, and AI-assisted workflows. Strong in MVP delivery, backend-heavy architecture, product thinking, legacy modernization, and high-signal communication with founders and stakeholders. Comfortable owning features end-to-end: from requirements clarification and system design to implementation, data migrations, integrations, and production support.",
+  "toneProfile": ["consultative", "confident", "technical", "founder-like"],
+  "preferredCtaStyle": "Clear, confident, low-friction CTA focused on next steps, scope clarification, and fast validation.",
+  "coreDomains": [
+    "SaaS",
+    "MVP Development",
+    "AI Integrations",
+    "Marketplace Platforms",
+    "Content Platforms",
+    "Internal Tools",
+    "Workflow Automation",
+    "Legacy Modernization",
+    "Product Engineering"
+  ],
+  "seniority": "Senior / Lead",
+  "availability": "30 hrs/week",
+  "location": "Lviv, Ukraine",
+  "notes": "Founder-friendly engineer with strong architecture ownership, backend-heavy full-stack delivery, and product-focused thinking. Best in roles where fast iteration, legacy cleanup, scope clarification, and shipping practical value matter more than corporate ceremony. Comfortable using AI tools to accelerate execution, but grounded in real engineering trade-offs, data modeling, migrations, and production reliability.",
+  "githubUrl": "",
+  "websiteUrl": "",
+  "portfolioUrl": "",
+  "evidence": "5+ years in full-stack web development with strong backend ownership across Next.js, React, Node.js, NestJS, PostgreSQL, MongoDB, and Redis. Worked as a senior engineer / tech lead on production systems, including content-heavy platforms, marketplaces, and internal tools. Strong product mindset: not just implementation, but requirements clarification, scope control, and helping shape MVPs around the highest-value problems. Uses AI tools daily as force multipliers, not substitutes for engineering judgment: Codex App/CLI + AGENTS.md for TDD-first coding, boilerplate generation, structured exploration, and fast prototyping; Stitch + Antigravity for design exploration and client-facing idea generation; Gemini / ChatGPT for validating implementation options, clarifying requirements, and product reasoning; n8n + chat integrations for automation and pet projects. Recent example: used Codex together with a project-specific AGENTS.md file to accelerate Convex + LangGraph integration in a TypeScript stack, generating initial boilerplate and base typing structure in minutes. MongoDB: 7/10. SQL/PostgreSQL: 8/10. Implemented a complex MySQL-to-MongoDB migration for a multi-site platform with 2M+ records using deterministic ObjectId generation, precomputed relation maps, streaming NDJSON ETL, and idempotent import flows. Also designed aggregation-based cleanup jobs to safely remove orphaned media at scale. Joined a legacy PHP/MySQL content platform under a tight two-week transition after the previous developer left, using documentation review, workflow clarification, daily syncs, and direct stakeholder alignment to ramp fast. Helped resolve a critical production outage caused by hijacked domains, restoring infrastructure and reconnecting third-party integrations on alternative domains under severe time pressure."
+}

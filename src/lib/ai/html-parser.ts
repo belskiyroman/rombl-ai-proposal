@@ -8,6 +8,10 @@
 export interface ParsedJobData {
     title: string;
     text: string;
+    proposalQuestions: Array<{
+        position: number;
+        prompt: string;
+    }>;
     skills: string[];
     type: "hourly" | "fixedPrice" | "hourly/fixedPrice";
     clientLocation: string;
@@ -30,6 +34,7 @@ export function parseUpworkJobHtml(html: string): ParsedJobData {
     return {
         title: extractTitle(doc),
         text: extractDescription(doc),
+        proposalQuestions: extractProposalQuestions(doc),
         skills: extractSkills(doc),
         type: extractProjectType(doc),
         clientLocation: extractClientLocation(doc),
@@ -227,6 +232,35 @@ function extractSkills(doc: Document): string[] {
     }
 
     return skills;
+}
+
+function extractProposalQuestions(doc: Document): Array<{ position: number; prompt: string }> {
+    const proposalJobDetails = getProposalJobDetailsRoot(doc);
+    if (!proposalJobDetails) {
+        return [];
+    }
+
+    const questionsRoot = doc.querySelector(".questions-area");
+    if (!questionsRoot) {
+        return [];
+    }
+
+    const questionPrompts: Array<{ position: number; prompt: string }> = [];
+    const labels = questionsRoot.querySelectorAll(".form-group .label");
+
+    for (const [index, label] of Array.from(labels).entries()) {
+        const prompt = cleanText(label.textContent ?? "");
+        if (!prompt) {
+            continue;
+        }
+
+        questionPrompts.push({
+            position: index + 1,
+            prompt
+        });
+    }
+
+    return questionPrompts;
 }
 
 function extractProjectType(doc: Document): "hourly" | "fixedPrice" | "hourly/fixedPrice" {

@@ -13,6 +13,7 @@ import {
   jobUnderstandingSchema,
   proposalExtractSchema,
   proposalPlanSchema,
+  questionAnsweringOutputSchema,
   type CandidateEvidenceExtraction,
   type CaseQuality,
   type DraftCritique,
@@ -20,7 +21,8 @@ import {
   type JobExtract,
   type JobUnderstanding,
   type ProposalExtract,
-  type ProposalPlan
+  type ProposalPlan,
+  type QuestionAnsweringOutput
 } from "./schemas";
 import {
   candidateEvidenceSystemPrompt,
@@ -30,6 +32,7 @@ import {
   jobUnderstandingSystemPrompt,
   proposalExtractorSystemPrompt,
   proposalPlanningSystemPrompt,
+  questionAnsweringSystemPrompt,
   qualityScorerSystemPrompt,
   revisionSystemPrompt,
   writerSystemPrompt
@@ -58,6 +61,7 @@ export interface ProposalEngineRunners {
   understandJob: StructuredInvoker<JobUnderstanding>;
   selectEvidence: StructuredInvoker<EvidenceSelectionOutput>;
   planProposal: StructuredInvoker<ProposalPlan>;
+  answerQuestions: StructuredInvoker<QuestionAnsweringOutput>;
   critiqueDraft: StructuredInvoker<DraftCritique>;
   writeDraft: TextInvoker;
   reviseDraft: TextInvoker;
@@ -228,6 +232,7 @@ ${input.candidateSummary}`;
 export function buildJobUnderstandingPrompt(input: {
   title?: string;
   description: string;
+  proposalQuestions?: Array<{ position: number; prompt: string }>;
   candidateProfileSummary: string;
 }): string {
   return `${jobUnderstandingSystemPrompt}
@@ -239,7 +244,10 @@ Job title:
 ${input.title ?? "Untitled"}
 
 Job description:
-${input.description}`;
+${input.description}
+
+Proposal questions:
+${input.proposalQuestions?.length ? JSON.stringify(input.proposalQuestions, null, 2) : "None"}`;
 }
 
 export function buildEvidenceSelectionPrompt(input: {
@@ -301,6 +309,8 @@ export function buildWriterPrompt(input: {
   selectedEvidence: Array<{ id: string; text: string; type: string }>;
   selectedFragments: Array<{ id: string; type: string; text: string }>;
   proposalPlan: ProposalPlan;
+  softTargetChars: number;
+  hardMaxChars: number;
 }): string {
   return `${writerSystemPrompt}
 
@@ -322,11 +332,17 @@ ${JSON.stringify(input.selectedFragments, null, 2)}
 Proposal plan:
 ${JSON.stringify(input.proposalPlan, null, 2)}
 
+Length budget:
+- Soft target: about ${input.softTargetChars} characters
+- Hard maximum: ${input.hardMaxChars} characters
+
 Rules:
 - Do not invent projects, outcomes, certifications, domains, or team size.
 - Use only facts present in selected evidence.
 - Do not copy fragment text verbatim.
 - Keep the proposal specific and natural.
+- Prefer the strongest 2-4 grounded proof points instead of trying to cover everything.
+- Aim for the soft target and never exceed the hard maximum.
 - End with a concise CTA aligned with the plan.
 
 Write only the final proposal in markdown.`;
@@ -357,6 +373,38 @@ Draft proposal:
 ${input.draft}`;
 }
 
+export function buildQuestionAnsweringPrompt(input: {
+  questions: Array<{ position: number; prompt: string }>;
+  externalProfiles: {
+    githubUrl?: string;
+    websiteUrl?: string;
+    portfolioUrl?: string;
+  };
+  selectedEvidence: Array<{ id: string; text: string; type: string }>;
+  retrievedEvidence: Array<{ id: string; text: string; type: string; tags: string[] }>;
+}): string {
+  return `${questionAnsweringSystemPrompt}
+
+Questions:
+${JSON.stringify(input.questions, null, 2)}
+
+Exact profile URLs:
+${JSON.stringify(input.externalProfiles, null, 2)}
+
+Selected evidence:
+${JSON.stringify(input.selectedEvidence, null, 2)}
+
+Retrieved candidate evidence:
+${JSON.stringify(input.retrievedEvidence, null, 2)}
+
+Rules:
+- Prefer exact profile URLs when a question asks for a GitHub, website, portfolio, or profile link.
+- For non-link questions, answer only from the evidence provided.
+- Keep answers concise and directly usable in a proposal form.
+- If the evidence does not support a safe answer, put the question into unresolved with a short reason.
+- Return only structured JSON.`;
+}
+
 export function buildRevisionPrompt(input: {
   originalDraft: string;
   critique: DraftCritique;
@@ -364,6 +412,8 @@ export function buildRevisionPrompt(input: {
   proposalPlan: ProposalPlan;
   selectedEvidence: Array<{ id: string; text: string; type: string }>;
   selectedFragments: Array<{ id: string; type: string; text: string }>;
+  softTargetChars: number;
+  hardMaxChars: number;
 }): string {
   return `${revisionSystemPrompt}
 
@@ -385,7 +435,55 @@ ${input.originalDraft}
 Critique:
 ${JSON.stringify(input.critique, null, 2)}
 
+Length budget:
+- Soft target: about ${input.softTargetChars} characters
+- Hard maximum: ${input.hardMaxChars} characters
+
+Rules:
+- Preserve only the strongest 2-4 grounded proof points when the draft is too long.
+- Remove repetition, generic filler, and low-value detail before cutting specific evidence.
+- Never exceed the hard maximum.
+
 Rewrite the proposal in markdown only.`;
+}
+
+export function buildLengthCompressionPrompt(input: {
+  originalDraft: string;
+  jobUnderstanding: JobUnderstanding;
+  proposalPlan: ProposalPlan;
+  selectedEvidence: Array<{ id: string; text: string; type: string }>;
+  softTargetChars: number;
+  hardMaxChars: number;
+}): string {
+  return `${revisionSystemPrompt}
+
+Job understanding:
+${JSON.stringify(input.jobUnderstanding, null, 2)}
+
+Proposal plan:
+${JSON.stringify(input.proposalPlan, null, 2)}
+
+Selected evidence:
+${JSON.stringify(input.selectedEvidence, null, 2)}
+
+Current draft:
+${input.originalDraft}
+
+Goal:
+- Reduce this cover letter to fit the proposal form limit.
+
+Length budget:
+- Soft target: about ${input.softTargetChars} characters
+- Hard maximum: ${input.hardMaxChars} characters
+
+Rules:
+- Keep only the strongest 2-4 grounded proof points.
+- Preserve the opening and concise CTA when possible.
+- Remove filler, repetition, low-priority detail, and generic explanation first.
+- Do not invent any new claims or facts.
+- Return markdown only.
+
+Rewrite the proposal so it stays within the hard maximum.`;
 }
 
 export function createProposalEngineRunners(
@@ -431,6 +529,11 @@ export function createProposalEngineRunners(
       model: fastModel,
       schema: proposalPlanSchema,
       name: "ProposalPlan"
+    }),
+    answerQuestions: createStructuredInvoker<QuestionAnsweringOutput>({
+      model: fastModel,
+      schema: questionAnsweringOutputSchema,
+      name: "QuestionAnsweringOutput"
     }),
     critiqueDraft: createStructuredInvoker<DraftCritique>({
       model: fastModel,

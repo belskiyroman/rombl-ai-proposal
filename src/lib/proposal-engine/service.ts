@@ -1,9 +1,10 @@
 import { assessCopyRisk, type CopyRiskReference } from "./copy-risk";
 import type { GenerateEmbeddingResult } from "../ai/embeddings";
 import { summarizeTelemetry, type GenerationStepTelemetry, type GenerationTelemetrySummary } from "../ai/telemetry";
+import { deterministicallyReduceCoverLetter, getProposalLengthBudget } from "./length";
 import type { ProposalEngineProgressEvent } from "./progress";
 import { rerankHistoricalCases, selectEvidenceSignals, selectFragmentSignals, type RetrievedEvidence, type RetrievedFragment, type RetrievedHistoricalCase, type VectorScoreMatch } from "./retrieval";
-import type { GenerationJobInput, JobUnderstanding } from "./schemas";
+import { maxProposalCoverLetterChars, type GenerationJobInput, type JobUnderstanding } from "./schemas";
 import { createProposalEngineInitialState, defaultMaxProposalRevisions, type CandidateProfileSummary, type ProposalEngineState } from "./state";
 import { runProposalEngineGraph, type ProposalEngineGraphDependencies } from "./graph";
 
@@ -33,6 +34,7 @@ export interface CreateProposalDependencies {
   retrieveContext: (args: {
     candidateId: number;
     jobUnderstanding: JobUnderstanding;
+    proposalQuestions: GenerationJobInput["proposalQuestions"];
   }) => Promise<{
     retrievedContext: NonNullable<ProposalEngineState["retrievedContext"]>;
     stepTelemetry: GenerationStepTelemetry[];
@@ -47,6 +49,9 @@ export interface CreateProposalDependencies {
 
 export interface CreateProposalResult {
   finalProposal: string;
+  coverLetterCharCount: number;
+  questionAnswers: ProposalEngineState["questionAnswers"];
+  unresolvedQuestions: ProposalEngineState["unresolvedQuestions"];
   approvalStatus: "APPROVED" | "NEEDS_REVISION";
   critiqueHistory: ProposalEngineState["critiqueHistory"];
   executionTrace: string[];
@@ -61,15 +66,27 @@ export interface CreateProposalResult {
   state: ProposalEngineState;
 }
 
-export function buildNeedsVectorText(jobUnderstanding: JobUnderstanding): string {
+export function buildNeedsVectorText(
+  jobUnderstanding: JobUnderstanding,
+  proposalQuestions: GenerationJobInput["proposalQuestions"] = []
+): string {
   return [
     jobUnderstanding.jobSummary,
     `Needs: ${jobUnderstanding.clientNeeds.join(", ")}`,
     `Must-have skills: ${jobUnderstanding.mustHaveSkills.join(", ")}`,
-    `Nice-to-have skills: ${jobUnderstanding.niceToHaveSkills.join(", ")}`
+    `Nice-to-have skills: ${jobUnderstanding.niceToHaveSkills.join(", ")}`,
+    buildQuestionVectorText(proposalQuestions)
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function buildQuestionVectorText(proposalQuestions: GenerationJobInput["proposalQuestions"]): string {
+  if (proposalQuestions.length === 0) {
+    return "";
+  }
+
+  return proposalQuestions.map((question) => `Question ${question.position}: ${question.prompt}`).join("\n");
 }
 
 function uniqueIds(matches: VectorScoreMatch[]): string[] {
@@ -102,6 +119,7 @@ export async function runRetrieveProposalContext(
   args: {
     candidateId: number;
     jobUnderstanding: JobUnderstanding;
+    proposalQuestions: GenerationJobInput["proposalQuestions"];
   },
   dependencies: RetrievedContextDependencies
 ): Promise<{
@@ -124,7 +142,7 @@ export async function runRetrieveProposalContext(
     tokenUsage: summaryEmbedding.telemetry.tokenUsage
   });
 
-  const needsVectorText = buildNeedsVectorText(args.jobUnderstanding);
+  const needsVectorText = buildNeedsVectorText(args.jobUnderstanding, args.proposalQuestions);
   const needsEmbeddingStartedAt = Date.now();
   const needsEmbedding = await dependencies.embed(needsVectorText);
   const needsEmbeddingFinishedAt = Date.now();
@@ -404,8 +422,39 @@ export async function runCreateProposal(
     throw new Error("Proposal engine did not complete all required stages.");
   }
 
+  let finalProposal = state.finalProposal || state.currentDraft;
+  if (finalProposal.length > maxProposalCoverLetterChars) {
+    const lengthBudget = getProposalLengthBudget(state.jobUnderstanding.proposalStrategy.length);
+    const reductionStartedAt = Date.now();
+    const deterministicReduction = deterministicallyReduceCoverLetter(finalProposal, lengthBudget.hardMaxChars);
+    const reductionFinishedAt = Date.now();
+
+    finalProposal = deterministicReduction.output;
+    state.currentDraft = finalProposal;
+    state.finalProposal = finalProposal;
+    if (state.draftHistory[state.draftHistory.length - 1] !== finalProposal) {
+      state.draftHistory = [...state.draftHistory, finalProposal];
+    }
+    state.executionTrace = [...state.executionTrace, "enforce_length.reduce"];
+    state.stepTelemetry = [
+      ...state.stepTelemetry,
+      {
+        step: `enforce_length.${deterministicReduction.strategy}`,
+        stage: "length_enforcement",
+        kind: "query",
+        startedAt: reductionStartedAt,
+        finishedAt: reductionFinishedAt,
+        durationMs: reductionFinishedAt - reductionStartedAt,
+        attempt: Math.max(1, state.draftHistory.length)
+      }
+    ];
+  }
+
   return {
-    finalProposal: state.finalProposal || state.currentDraft,
+    finalProposal,
+    coverLetterCharCount: finalProposal.length,
+    questionAnswers: state.questionAnswers,
+    unresolvedQuestions: state.unresolvedQuestions,
     approvalStatus: state.latestCritique.approvalStatus,
     critiqueHistory: state.critiqueHistory,
     executionTrace: state.executionTrace,

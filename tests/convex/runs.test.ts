@@ -130,6 +130,10 @@ describe("buildGenerationRunDetail", () => {
     expect(detail.retrievedContext.similarCases).toEqual([]);
     expect(detail.retrievedContext.fragments.openings).toEqual([]);
     expect(detail.retrievedContext.evidenceCandidates).toEqual([]);
+    expect(detail.jobInput.proposalQuestions).toEqual([]);
+    expect(detail.coverLetterCharCount).toBe("Saved proposal body".length);
+    expect(detail.questionAnswers).toEqual([]);
+    expect(detail.unresolvedQuestions).toEqual([]);
   });
 
   it("keeps saved telemetry when it exists", () => {

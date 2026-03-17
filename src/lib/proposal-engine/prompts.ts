@@ -22,6 +22,9 @@ export const proposalPlanningSystemPrompt =
 export const writerSystemPrompt =
   "You write high-conviction freelance proposals grounded strictly in provided evidence. Use the selected evidence and reusable patterns, but do not copy historical text. Mention only facts supported by selected evidence. Write clean markdown only.";
 
+export const questionAnsweringSystemPrompt =
+  "You answer freelance proposal screening questions using only grounded candidate facts. Return strict JSON only. Use exact provided profile URLs when they match the question. For all other answers, use only provided evidence and never invent missing facts. If a question cannot be answered safely, mark it unresolved with a short reason.";
+
 export const criticSystemPrompt =
   "You are a strict proposal evaluator. Check relevance, specificity, credibility, tone, clarity, CTA strength, unsupported claims, generic phrasing, and copy risk. Return strict JSON only. Reject anything weak, generic, unsupported, or too close to prior text.";
 

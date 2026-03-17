@@ -4,12 +4,25 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:selfhosted": "node --env-file=.env.selfhosted ./node_modules/next/dist/bin/next dev",
     "build": "next build",
+    "build:selfhosted": "node --env-file=.env.selfhosted ./node_modules/next/dist/bin/next build",
     "extension:build": "node scripts/build-extension.mjs",
     "extension:watch": "node scripts/build-extension.mjs --watch",
     "start": "next start",
+    "start:selfhosted": "node --env-file=.env.selfhosted ./node_modules/next/dist/bin/next start",
+    "seed:candidates:selfhosted": "node --env-file=.env.selfhosted ./scripts/seed-candidates.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "selfhosted:up": "docker compose --env-file .env.selfhosted -f docker-compose.selfhosted.yml up -d",
+    "selfhosted:down": "docker compose --env-file .env.selfhosted -f docker-compose.selfhosted.yml down",
+    "selfhosted:logs": "docker compose --env-file .env.selfhosted -f docker-compose.selfhosted.yml logs -f",
+    "selfhosted:admin-key": "docker compose --env-file .env.selfhosted -f docker-compose.selfhosted.yml exec backend ./generate_admin_key.sh",
+    "convex:selfhosted:dev": "npx convex dev --env-file .env.selfhosted",
+    "convex:selfhosted:push": "npx convex dev --env-file .env.selfhosted --once",
+    "convex:selfhosted:env:list": "npx convex env list --env-file .env.selfhosted",
+    "convex:selfhosted:env:sync": "node --env-file=.env.selfhosted ./scripts/sync-selfhosted-convex-env.mjs",
+    "convex:selfhosted:import": "npx convex import --env-file .env.selfhosted"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

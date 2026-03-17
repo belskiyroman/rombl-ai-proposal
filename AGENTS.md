@@ -61,6 +61,7 @@ The goal is not to copy past proposals. The goal is to reuse high-signal pattern
   - immutable saved generation snapshots
   - stores:
     - job input
+    - ordered proposal questions
     - job understanding
     - candidate snapshot
     - selected evidence
@@ -71,11 +72,14 @@ The goal is not to copy past proposals. The goal is to reuse high-signal pattern
     - critique history
     - copy-risk result
     - step telemetry and telemetry summary
-    - final proposal
+    - final proposal cover letter
+    - cover-letter character count
+    - structured question answers
+    - unresolved proposal questions
 
 - `generation_handoffs`
   - temporary import records used by the Chrome extension handoff flow
-  - stores source metadata plus extracted `jobTitle` and `jobDescription`
+  - stores source metadata plus extracted `jobTitle`, `jobDescription`, and ordered `proposalQuestions`
   - used only for fallback/manual prefill into `/generate?handoff=...`
 
 There are no legacy V1 tables in the current schema.
@@ -99,6 +103,7 @@ Candidate management is handled through `convex/profiles.ts`.
 ### Behavior
 
 - Candidate creation and updates write to `candidate_profiles`
+- Candidate metadata may include reusable external profile URLs (`githubUrl`, `websiteUrl`, `portfolioUrl`) for exact-link screening questions
 - Candidate-authored evidence writes to `candidate_evidence_blocks`
 - Candidate deletion cascades through evidence, fragments, historical cases, clusters, and saved generation runs
 - The UI treats candidate selection as the workspace context; users do not manually manage separate member entities anymore
@@ -318,12 +323,14 @@ The online graph lives in `src/lib/proposal-engine/graph.ts`.
 3. `select_evidence`
 4. `plan_proposal`
 5. `write_draft`
-6. `critique`
-7. `revise_if_needed`
+6. `enforce_length`
+7. `critique`
+8. `revise_if_needed`
 
 ### Loop behavior
 
 - first pass writes one draft
+- every draft pass goes through `enforce_length` before critique
 - critique evaluates it
 - if critique returns `NEEDS_REVISION`, run `revise_if_needed`
 - stop after `2` total critique passes
@@ -418,7 +425,8 @@ There is no legacy pair detail route anymore.
   - popup/open-in-app flow is fallback only
   - options page stores the configurable app URL
   - background worker enables side-panel-on-action-click and clears tab-scoped state
-  - side panel captures the current job page, lets the user review/edit input, select a candidate, poll generation, and copy the final proposal
+  - side panel captures the current Upwork Submit Proposal page, expands the full job description before capture, lets the user review/edit job input plus proposal questions, select a candidate, poll generation, and autofill both the proposal cover letter and question fields on the page
+  - cover letters are capped at 5000 characters; generation compresses or deterministically reduces over-limit drafts internally instead of surfacing a length-only failure
   - content script reuses the shared Upwork parser instead of duplicating selectors
 
 ## 15. Contributor Rules

@@ -3,8 +3,11 @@ import { extractUpworkJobPageSnapshot, type ExtractedUpworkJobPage } from "../..
 export const unsupportedProposalPageMessage = "This page does not look like a supported Upwork Submit Proposal page.";
 export const fullDescriptionCaptureErrorMessage =
   "Could not expand the full job description on this Upwork proposal page. Reload the page and try again.";
+export const missingCoverLetterFieldMessage = "Could not find the Upwork cover letter field on this proposal page.";
+export const missingQuestionFieldsMessage = "Could not find all Upwork proposal question fields on this proposal page.";
 
 const defaultExpandTimeoutMs = 1000;
+const defaultReadyTimeoutMs = 3000;
 const defaultPollIntervalMs = 50;
 
 export async function captureUpworkProposalPage(args: {
@@ -15,6 +18,10 @@ export async function captureUpworkProposalPage(args: {
   pollIntervalMs?: number;
 }): Promise<ExtractedUpworkJobPage | null> {
   const doc = args.doc ?? document;
+  await waitForProposalPageReady(doc, {
+    timeoutMs: args.timeoutMs ?? defaultReadyTimeoutMs,
+    pollIntervalMs: args.pollIntervalMs
+  });
   await ensureProposalDescriptionExpanded(doc, {
     timeoutMs: args.timeoutMs,
     pollIntervalMs: args.pollIntervalMs
@@ -69,6 +76,84 @@ export async function ensureProposalDescriptionExpanded(
   }
 }
 
+async function waitForProposalPageReady(
+  doc: Document,
+  options: {
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  } = {}
+): Promise<void> {
+  await waitForCondition(
+    () => hasProposalPageCaptureData(doc),
+    options.timeoutMs ?? defaultReadyTimeoutMs,
+    options.pollIntervalMs ?? defaultPollIntervalMs
+  );
+}
+
+export function fillProposalSubmission(
+  doc: Document,
+  submission: {
+    coverLetter: string;
+    questionAnswers: Array<{
+      position: number;
+      prompt: string;
+      answer: string;
+    }>;
+    unresolvedQuestions: Array<{
+      position: number;
+      prompt: string;
+      reason: string;
+    }>;
+  }
+): void {
+  const textarea = findCoverLetterTextarea(doc);
+  if (!textarea) {
+    throw new Error(missingCoverLetterFieldMessage);
+  }
+
+  setTextareaValue(doc, textarea, submission.coverLetter);
+
+  const questionTextareas = findProposalQuestionTextareas(doc);
+  const questionValues = new Map<number, string>();
+  for (const answer of submission.questionAnswers) {
+    questionValues.set(answer.position, answer.answer);
+  }
+  for (const unresolved of submission.unresolvedQuestions) {
+    if (!questionValues.has(unresolved.position)) {
+      questionValues.set(unresolved.position, "");
+    }
+  }
+
+  if (questionValues.size > questionTextareas.length) {
+    throw new Error(missingQuestionFieldsMessage);
+  }
+
+  for (const [index, questionTextarea] of questionTextareas.entries()) {
+    setTextareaValue(doc, questionTextarea, questionValues.get(index + 1) ?? "");
+  }
+}
+
+export function fillProposalCoverLetter(doc: Document, coverLetter: string): void {
+  const textarea = findCoverLetterTextarea(doc);
+  if (!textarea) {
+    throw new Error(missingCoverLetterFieldMessage);
+  }
+
+  setTextareaValue(doc, textarea, coverLetter);
+}
+
+function setTextareaValue(doc: Document, textarea: HTMLTextAreaElement, value: string) {
+  const nativeSetter = Object.getOwnPropertyDescriptor(doc.defaultView?.HTMLTextAreaElement?.prototype ?? HTMLTextAreaElement.prototype, "value")?.set;
+  if (nativeSetter) {
+    nativeSetter.call(textarea, value);
+  } else {
+    textarea.value = value;
+  }
+
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 function getProposalJobDetailsRoot(doc: Document): Element | null {
   return doc.querySelector(".fe-job-details");
 }
@@ -77,10 +162,39 @@ function getProposalDescriptionBlock(root: ParentNode): Element | null {
   return root.querySelector(".content .description") ?? root.querySelector(".description");
 }
 
+function findCoverLetterTextarea(doc: Document): HTMLTextAreaElement | null {
+  const directMatch = doc.querySelector<HTMLTextAreaElement>('textarea[aria-labelledby="cover_letter_label"]');
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const label = doc.getElementById("cover_letter_label");
+  return label?.closest(".form-group")?.querySelector<HTMLTextAreaElement>("textarea") ?? null;
+}
+
+function findProposalQuestionTextareas(doc: Document): HTMLTextAreaElement[] {
+  return Array.from(doc.querySelectorAll<HTMLTextAreaElement>(".questions-area .form-group textarea"));
+}
+
 function getProposalDescriptionToggle(root: ParentNode): HTMLButtonElement | null {
   return root.querySelector(
     '.description button.air3-truncation-btn[aria-controls], .description button[data-ev-label="truncation_toggle"][aria-controls]'
   );
+}
+
+function hasProposalPageCaptureData(doc: Document): boolean {
+  const jobDetailsRoot = getProposalJobDetailsRoot(doc);
+  if (!jobDetailsRoot) {
+    return false;
+  }
+
+  const title = jobDetailsRoot.querySelector(".content h3, .content h4, .content h5, h3, h4, h5");
+  if (normalizeText(title?.textContent).length === 0) {
+    return false;
+  }
+
+  const descriptionBlock = getProposalDescriptionBlock(jobDetailsRoot);
+  return normalizeText(descriptionBlock?.textContent).length >= 40;
 }
 
 function isExpanded(toggle: HTMLButtonElement | null): boolean {

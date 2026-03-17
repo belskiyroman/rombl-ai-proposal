@@ -35,6 +35,14 @@
         <textarea id="jobDescription" class="text-area" rows="10" placeholder="Captured Upwork description"></textarea>
       </section>
 
+      <section id="proposalQuestionsSection" class="preview-card is-hidden">
+        <div class="status-row">
+          <p class="preview-meta">Proposal questions</p>
+          <span id="proposalQuestionsCount" class="helper-text"></span>
+        </div>
+        <div id="proposalQuestionsEditor" class="form-stack"></div>
+      </section>
+
       <div class="actions">
         <button id="generateButton" class="primary-button" type="button">Generate Proposal</button>
         <button id="refreshCaptureButton" class="secondary-button" type="button">Refresh current page</button>
@@ -52,7 +60,16 @@
           <span id="resultBadge" class="result-badge"></span>
         </div>
         <pre id="proposalOutput" class="proposal-output"></pre>
+        <div id="questionAnswersSection" class="form-stack is-hidden">
+          <p class="preview-meta">Question answers</p>
+          <div id="questionAnswersOutput" class="form-stack"></div>
+        </div>
+        <div id="unresolvedQuestionsSection" class="form-stack is-hidden">
+          <p class="preview-meta">Manual questions</p>
+          <ul id="unresolvedQuestionsOutput" class="progress-list"></ul>
+        </div>
         <div class="actions">
+          <button id="fillCoverLetterButton" class="primary-button" type="button">Fill submission</button>
           <button id="copyProposalButton" class="primary-button" type="button">Copy proposal</button>
           <button id="openRunButton" class="secondary-button" type="button">Open in app</button>
         </div>

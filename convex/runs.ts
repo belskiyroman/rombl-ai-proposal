@@ -20,6 +20,9 @@ type StoredGenerationRun = {
   critiqueHistory: GenerationSnapshotData["critiqueHistory"];
   copyRisk: GenerationSnapshotData["copyRisk"];
   finalProposal: string;
+  coverLetterCharCount?: number;
+  questionAnswers?: GenerationSnapshotData["questionAnswers"];
+  unresolvedQuestions?: GenerationSnapshotData["unresolvedQuestions"];
   approvalStatus: GenerationSnapshotData["approvalStatus"];
   executionTrace?: string[];
   stepTelemetry?: GenerationStepTelemetry[];
@@ -62,6 +65,13 @@ function buildProposalPreview(value: string): string {
   return `${normalized.slice(0, 177).trimEnd()}...`;
 }
 
+function normalizeJobInput(jobInput: StoredGenerationRun["jobInput"]): GenerationSnapshotData["jobInput"] {
+  return {
+    ...jobInput,
+    proposalQuestions: jobInput.proposalQuestions ?? []
+  };
+}
+
 function countRevisions(critiqueHistory: GenerationSnapshotData["critiqueHistory"], draftHistory: string[]): number {
   const critiqueDrivenRevisions = critiqueHistory.filter((item) => item.approvalStatus === "NEEDS_REVISION").length;
   const draftDrivenRevisions = Math.max(0, draftHistory.length - 1);
@@ -75,7 +85,7 @@ export function buildGenerationRunListItem(record: StoredGenerationRun): Generat
     candidateId: record.candidateId,
     createdAt: record.createdAt,
     approvalStatus: record.approvalStatus,
-    jobTitle: record.jobInput.title?.trim() || record.jobUnderstanding.jobSummary,
+    jobTitle: normalizeJobInput(record.jobInput).title?.trim() || record.jobUnderstanding.jobSummary,
     jobSummary: record.jobUnderstanding.jobSummary,
     finalProposalPreview: buildProposalPreview(record.finalProposal),
     revisionCount: countRevisions(record.critiqueHistory, record.draftHistory),
@@ -87,8 +97,11 @@ export function buildGenerationRunDetail(record: StoredGenerationRun): Generatio
   return {
     generationRunId: record._id,
     candidateSnapshot: record.candidateSnapshot ?? fallbackCandidateSnapshot(record.candidateId),
-    jobInput: record.jobInput,
+    jobInput: normalizeJobInput(record.jobInput),
     finalProposal: record.finalProposal,
+    coverLetterCharCount: record.coverLetterCharCount ?? record.finalProposal.length,
+    questionAnswers: record.questionAnswers ?? [],
+    unresolvedQuestions: record.unresolvedQuestions ?? [],
     approvalStatus: record.approvalStatus,
     critiqueHistory: record.critiqueHistory,
     executionTrace: record.executionTrace ?? [],
